@@ -1,0 +1,2754 @@
+<!DOCTYPE html>
+<html>
+  <head>
+
+    <style>
+      body {margin:0;
+        overflow = 'hidden';
+        position: relative;
+      }
+      html, body {
+        overflow-x: hidden;
+        overflow-y: hidden;
+        touch-action: none;
+      }
+    </style>
+    <title>
+      MCKnockoff
+    </title>
+    <meta meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, maximum-scale=1">
+  </head>
+  <body>
+    <form>
+      <input id="fileInput" type="file" hidden />
+      <input id="resetInput" type="reset" style="display:none;"/>
+    </form>
+    <img id="grassimage" crossOrigin="anonymous" src="https://zach-kamenov.s3.amazonaws.com/knightblocks/resources/images/grass.png" hidden>
+    <img id="sunimage" crossOrigin="anonymous" src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Our_Sun.jpg/640px-Our_Sun.jpg" hidden>
+    <img id="dirtimage" crossOrigin="anonymous" src="https://zach-kamenov.s3.amazonaws.com/knightblocks/resources/images/dirt.png" hidden>
+    <img id="stoneimage" crossOrigin="anonymous" src="https://zach-kamenov.s3.amazonaws.com/knightblocks/resources/images/stone.png" hidden>
+    <img id="moonmap" crossOrigin="anonymous" src="https://upload.wikimedia.org/wikipedia/commons/e/ea/Clementine_albedo_simp750.jpg" hidden>
+    <canvas oncontextmenu="return false;" id="canvas1">
+      Canvas is not supported on this browser.
+    </canvas>
+    <script>
+      var canvas = document.getElementById("canvas1");
+      var mobileControl = true;
+      var g = canvas.getContext("2d");
+      var keys = [false];
+      var keyss = [false];
+      var lmb = false;
+      var rmb = false;
+      var mmb = false;
+      var lmbs = false;
+      var rmbs = false;
+      var mmbs = false;
+      for (let i = 0; i < 255; i++) {
+        keys.push(false);
+        keyss.push(false);
+      }
+      var mousePos = [0, 0];
+      const chunkSize = 16;
+      const inventorySpacing = 0.01;
+      const inventoryBlockSize = 0.05;
+
+      function constrain(a, b, c) {
+        return Math.min(Math.max(a,b),c);
+      }
+
+      let cid = 0;
+      async function getTexture(img) {
+        let data = [];
+        var finished = false;
+        while (!finished)
+          try {
+            var canv = document.createElement("canvas");
+            canv.id="c"+cid;
+            canv.hidden = true;
+            cid++;
+            var gc = canv.getContext("2d");
+            canv.width = img.width;
+            canv.height = img.height;
+            gc.drawImage(img,0,0);
+            let arr = gc.getImageData(0,0,img.width,img.height).data;
+            //console.log(arr);
+            data = [];
+            for(let i = 0; i < img.width; i++) {
+              data.push([]);
+              for(let j = 0; j < img.height; j++)
+                data[i].push([0,0,0]);
+
+            }
+
+            for (let i = 0; i < arr.length; i+=4) {
+              //console.log(arr[i]);
+              data[Math.floor(i/4)%img.width][Math.floor(i/4/img.width)] = [arr[i],arr[i+1],arr[i+2]];
+            }
+            //console.log(data);
+            finished = true;
+          } catch (error) {
+            //console.log(error);
+            await sleep(100);
+          }
+        return data;
+      }
+
+      function toStringRGB(r, g, b) {
+        return (r < 16 ? "#0" : "#") + r.toString(16) + (g < 16 ? "0" : "") + g.toString(16) + (b < 16 ? "0" : "") + b.toString(16);
+      }
+
+      function sleep(ms) {
+        return new Promise(resolver => setTimeout(resolver,ms));
+      }
+
+			function moveFunction(event) {
+        if (event.movementX != NaN && event.movementY != NaN) {
+          //console.log([event.movementX, event.movementY]);
+  				mousePos = [event.clientX, event.clientY];// = [event.clientX, event.clientY];
+          if (mousePos[0] == NaN || mousePos[1] == NaN){
+            mousePos = [0, 0];
+          }
+          //console.log(mousePos);
+          if (!gamePaused && document.pointerLockElement) {
+            playerAngle[0] += event.movementX/500;//+0.00001;
+            playerAngle[1] -= event.movementY/500;//+0.00001;
+            playerAngle[1] = constrain(-1.5708,playerAngle[1],1.5708);
+          }
+        }
+			}
+
+			function keyPressed(event) {
+        mobileControl = false;
+				console.log(event.keyCode);
+				keys[event.keyCode] = true;
+				keyss[event.keyCode] = true;
+			}
+
+			function keyReleased(event) {
+				console.log(event.keyCode);
+				keys[event.keyCode] = false;
+			}
+
+      function mouseDown(event) {
+        if (!gamePaused) {
+          canvas.requestPointerLock({
+            unadjustedMovement: true,
+          });
+        }
+        switch (event.button) {
+          case 0:
+            lmb = true;
+            if (document.pointerLockElement || gamePaused)
+              lmbs = true;
+            break;
+          case 1:
+            mmb = true;
+            mmbs = true;
+            break;
+          case 2:
+            rmb = true;
+            rmbs = true;
+            break;
+          default:
+            break;
+        }
+      }
+
+      function mouseUp(event) {
+        switch (event.button) {
+          case 0:
+            lmb = false;
+            break;
+          case 1:
+            mmb = false;
+            break;
+          case 2:
+            rmb = false;
+            break;
+          default:
+            break;
+        }
+      }
+
+      function mouseWheel(event) {
+        mobileControl = false;
+        itemSelected = Math.floor(itemSelected + ((event.deltaY>0) ? 1 : -1) + playerInventory[0].length)%playerInventory[0].length;
+      }
+
+      function pointerLockFunction(event) {
+        //console.log("SDFSA");
+        if (!document.pointerLockElement) {
+          gamePaused = true;
+        }
+      }
+
+			canvas.addEventListener("mousemove", moveFunction);
+      canvas.addEventListener("wheel", mouseWheel);
+			canvas.addEventListener("mousedown", mouseDown);
+			canvas.addEventListener("mouseup", mouseUp);
+			document.onpointerlockchange = pointerLockFunction;
+			document.onkeydown = keyPressed;
+			document.onkeyup = keyReleased;
+
+      var fingerLastX = 0;
+      var fingerLastY = 0;
+      var movable = true;
+
+      function handleMove(e) {
+        if (!mobileControl)
+          return;
+        if (e.touches) {
+          if (movable) {
+            playerAngle[0] += (e.touches[0].pageX - fingerLastX)/100;//+0.00001;
+            playerAngle[1] -= (e.touches[0].pageY - fingerLastY)/100;//+0.00001;
+          }
+          playerAngle[1] = constrain(-1.5708,playerAngle[1],1.5708);
+          fingerLastX = e.touches[0].pageX;
+          fingerLastY = e.touches[0].pageY;
+          e.preventDefault();
+        }
+      }
+
+      function handleStart(e) {
+        if (!mobileControl)
+          return;
+        if (e.touches) {
+          fingerLastX = e.touches[0].pageX;
+          fingerLastY = e.touches[0].pageY;
+          let x = e.touches[0].pageX/canvas.width;
+          let y = e.touches[0].pageY/canvas.height;
+          mousePos[0] = fingerLastX;
+          mousePos[1] = fingerLastY;
+          if (gamePaused)
+            lmbs = true;
+          else {
+            movable = false;
+            if (x > 0 && x < 1/12 && y > 1/12 && y < 1/6)
+              keys[65] = !keys[65]; //left
+            else if (x > 1/12 && x < 1/6 && y > 0 && y < 1/12)
+              keys[87] = !keys[87]; //forward
+            else if (x > 1/12 && x < 1/6 && y > 1/12 && y < 1/6)
+              keys[32] = !keys[32]; //jump
+            else if (x > 1/6 && x < 1/4 && y > 1/12 && y < 1/6)
+              keys[68] = !keys[68]; //right
+            else if (y > 1/6 && y < 1/4 && x > 1/12 && x < 1/6)
+              keys[83] = !keys[83]; //backward
+            else if (x > 1/3 && x < 1/2 && y > 0 && y < 1/12)
+              keyss[76] = true; //picture
+            else if (x > 1/3 && x < 1/2 && y > 1/6 && y < 1/4)
+              lmbs = true; //mine block
+            else if (x > 7/12 && x < 3/4 && y > 0 && y < 1/12)
+              gamePaused = true; //menu
+            else if (x > 7/12 && x < 3/4 && y > 1/6 && y < 1/4)
+              rmbs = true; //place block
+            else if (x > 5/6 && x < 1 && y > 0 && y < 1/12)
+              itemSelected -= 1; //cycle left
+            else if (x > 5/6 && x < 1 && y > 1/6 && y < 1/4)
+              itemSelected += 1; //cycle right
+            else
+              movable = true;
+
+            itemSelected = (itemSelected + playerInventory[0].length)%playerInventory[0].length;
+          }
+          e.preventDefault();
+        }
+      }
+
+      function handleEnd(e) {
+        if (!mobileControl)
+          return;
+        if (e.touches) {
+
+          //fingerLastX = e.touches[0].pageX;
+          //fingerLastY = e.touches[0].pageY;
+
+          e.preventDefault();
+        }
+      }
+
+      function handleCancel(e) {
+        if (!mobileControl)
+          return;
+        if (e.touches) {
+          fingerLastX = e.touches[0].pageX;
+          fingerLastY = e.touches[0].pageY;
+          if (fingerLastY < canvas.width/12 && fingerLastX < canvas.width/12) {
+
+          }
+          e.preventDefault();
+        }
+      }
+
+      const el = document.querySelector("canvas");
+      el.addEventListener("touchstart", handleStart);
+      el.addEventListener("touchmove", handleMove);
+      el.addEventListener("touchend", handleEnd);
+      el.addEventListener("touchcancel", handleCancel);
+
+      //Game definitions
+
+      var blockIdIterator = 1;
+      var blockList = [];
+
+      class Block {
+        constructor(texture, itemTexture, friction, luminousity) {
+          this.texture = texture;
+          this.itemTexture = itemTexture;
+          this.friction = friction;
+          this.luminousity = luminousity;
+          this.blockId = blockIdIterator;
+          blockList.push(this);
+          blockIdIterator++;
+        }
+      }
+
+      class RenderOutput {
+        constructor() {
+          this.pos = [0,0,0];
+          this.color = [0,0,0];
+          this.hit = false;
+        }
+
+      }
+
+      class DynamicFace {
+        constructor(pos, size, rot, texture) {
+          this.pos = pos; //3d array
+          this.size = size; //2d array
+          this.rot = rot; //3d array
+          this.normal = [Math.sin(rot[0])*Math.cos(rot[1]),Math.sin(rot[1]),Math.cos(rot[0])*Math.cos(rot[1])];
+          this.texture = texture;
+          //console.log(texture);
+        }
+
+        setRotation(rot) {
+          this.rot = rot; //3d array
+          this.normal = [Math.sin(rot[0])*Math.cos(rot[1]),Math.sin(rot[1]),Math.cos(rot[0])*Math.cos(rot[1])];
+        }
+
+        traceRender(x, y, z, m, n, s, o, lightMult) {
+          x -= this.pos[0];
+          y -= this.pos[1];
+          z -= this.pos[2];
+
+          // m = x/y
+          // n = z/y
+
+          /*f (keyss[77]) {
+            console.log('foo');
+            console.log(this.pos);
+            console.log('oof');
+            keyss[77] = false;
+          }*/
+
+          let hy = (this.normal[0]*x+this.normal[1]*y+this.normal[2]*z)/(m*this.normal[0]+n*this.normal[2]+this.normal[1]);
+          let hx = m*hy;
+          let hz = n*hy;
+
+          if (s == Math.sign(hy) || o.hit && Math.abs(hy) > Math.abs(o.pos[1])) {
+            return o;
+          } else {
+
+            let fl = Math.sqrt(1-this.normal[1]*this.normal[1]);
+            let tix = (hx-x)*Math.cos(this.rot[0]) - (hz-z)*Math.sin(this.rot[0]);//(-(hx-x)*this.normal[0] + (hz-z)*this.normal[2]);
+            let tiy = (hy-y)/fl;
+            let tx = (tix*Math.cos(this.rot[2]) + tiy*Math.sin(this.rot[2]))/this.size[0];
+            let ty = (tiy*Math.cos(this.rot[2]) - tix*Math.sin(this.rot[2]))/this.size[1];
+
+
+            //if (tx == NaN || tx == undefined)
+            //  console.log('nan')
+            if (!(Math.abs(tx) < 1 && Math.abs(ty) < 1)) {
+              return o;
+            } else {
+
+              o.pos[0] = hx;
+              o.pos[1] = hy;
+              o.pos[2] = hz;
+              o.hit = true;
+              let m = this.texture[Math.floor((ty/2+0.5)*this.texture.length)];
+              let c = m[Math.floor((tx/2+0.5)*m.length)];
+              //let n = [c[0]*lightMult[0], c[1]*lightMult[1], c[2]*lightMult[2]];
+              //if (c == undefined) {
+              //o.color[0] = 0;
+              //o.color[1] = 0;
+              //o.color[2] = 0;
+              //} else {
+              o.color[0] = Math.floor(c[0]*lightMult[0]);
+              o.color[1] = Math.floor(c[1]*lightMult[1]);
+              o.color[2] = Math.floor(c[2]*lightMult[2]);
+
+              return o;
+            }
+          }
+        }
+      }
+
+      class Cube {
+        constructor(pos, size, rot, defaultTexture) {
+          this.pos = pos; //3d array
+          this.size = size; //3d array
+          this.rot = rot; //2d array
+          this.faces = [
+            new DynamicFace([size[2]*Math.sin(rot[0])*Math.cos(rot[1]),size[2]*Math.sin(rot[1]),size[2]*Math.cos(rot[0])*Math.cos(rot[1])], [size[0],size[1]], [rot[0],rot[1],0], defaultTexture), //front
+            new DynamicFace([-size[2]*Math.sin(rot[0])*Math.cos(rot[1]),-size[2]*Math.sin(rot[1]),-size[2]*Math.cos(rot[0])*Math.cos(rot[1])], [size[0],size[1]], [rot[0]+3.1416,-rot[1],0], defaultTexture), //back
+            new DynamicFace([size[1]*Math.sin(rot[0])*Math.sin(rot[1]),-size[1]*Math.cos(rot[1]),size[1]*Math.cos(rot[0])*Math.sin(rot[1])], [size[0],size[2]], [rot[0],rot[1]+1.5708,0], defaultTexture), //top
+            new DynamicFace([-size[1]*Math.sin(rot[0])*Math.sin(rot[1]),size[1]*Math.cos(rot[1]),-size[1]*Math.cos(rot[0])*Math.sin(rot[1])], [size[0],size[2]], [rot[0],rot[1]-1.5708,0], defaultTexture), //bottom
+            new DynamicFace([size[0]*Math.cos(rot[0]),0,-size[0]*Math.sin(rot[0])], [size[2],size[1]], [rot[0]-1.5708,0,rot[1]], defaultTexture), //left
+            new DynamicFace([-size[0]*Math.cos(rot[0]),0,size[0]*Math.sin(rot[0])], [size[2],size[1]], [rot[0]+1.5708,0,-rot[1]], defaultTexture) //right
+          ];
+        }
+
+        setRotation(rot) {
+          this.rot = rot;
+          this.faces[0].pos = [this.size[2]*Math.sin(rot[0])*Math.cos(rot[1]),this.size[2]*Math.sin(rot[1]),this.size[2]*Math.cos(rot[0])*Math.cos(rot[1])];
+          this.faces[0].setRotation([rot[0],rot[1],0]);
+          this.faces[1].pos = [-this.size[2]*Math.sin(rot[0])*Math.cos(rot[1]),-this.size[2]*Math.sin(rot[1]),-this.size[2]*Math.cos(rot[0])*Math.cos(rot[1])];
+          this.faces[1].setRotation([rot[0]+3.1416,-rot[1],0]);
+          this.faces[2].pos = [this.size[1]*Math.sin(rot[0])*Math.sin(rot[1]),-this.size[1]*Math.cos(rot[1]),this.size[1]*Math.cos(rot[0])*Math.sin(rot[1])];
+          this.faces[2].setRotation([rot[0],rot[1]+1.5708,0]);
+          this.faces[3].pos = [-this.size[1]*Math.sin(rot[0])*Math.sin(rot[1]),this.size[1]*Math.cos(rot[1]),-this.size[1]*Math.cos(rot[0])*Math.sin(rot[1])]
+          this.faces[3].setRotation([rot[0],rot[1]-1.5708,0]);
+          this.faces[4].pos = [this.size[0]*Math.cos(rot[0]),0,-this.size[0]*Math.sin(rot[0])];
+          this.faces[4].setRotation([rot[0]-1.5708,0,rot[1]]);
+          this.faces[5].pos = [-this.size[0]*Math.cos(rot[0]),0,this.size[0]*Math.sin(rot[0])]
+          this.faces[5].setRotation([rot[0]+1.5708,0,-rot[1]]);
+        }
+
+        traceRender(x, y, z, m, n, s, o, lightMult) {
+          //if (keyss[77]) {
+          //  console.log(y);
+          //  keyss[77] = false;
+          //}
+          this.faces.forEach((face, i) => {
+            face.traceRender(x-this.pos[0], y-this.pos[1], z-this.pos[2], m, n, s, o, lightMult);
+          });
+          return o;
+        }
+      }
+      var eid = 0;
+      class Entity {
+        constructor(cubes, pos, chunk, radius, height) {
+          this.cubes = cubes;
+          this.pos = pos;
+          this.chunk = chunk;
+          this.oc = chunk;
+          chunk.entities.push(this);
+          this.radius = radius;
+          this.height = height;
+          this.destroyed = false;
+          this.eid = eid;
+          this.visualDir = 0;
+          eid++;
+
+          this.velocity = [0, 0, 0];
+          this.jump = false;
+          this.jumpPower = 0;
+          this.moveSpeed = 0;
+          this.moveForward = 0;
+          this.moveDir = 0;
+        }
+
+        updateChunk() {
+          if (this.oc != this.chunk)
+            this.oc.entities.forEach((entity, i) => {
+              if (entity.eid == this.eid) {
+                this.oc.entities.splice(i, 1);
+                this.oc = this.chunk;
+                this.chunk.entities.push(this);
+              }
+          });
+
+        }
+
+        tick(m) {
+          if (this.pos[0] < 0) {
+            this.chunk = this.chunk.negXChunk;
+            this.updateChunk();
+            this.pos[0] += chunkSize;
+          } if (this.pos[0] > chunkSize)  {
+            this.chunk = this.chunk.posXChunk;
+            this.updateChunk();
+            this.pos[0] -= chunkSize;
+          } if (this.pos[1] < 0) {
+            this.chunk = this.chunk.negYChunk;
+            this.updateChunk();
+            this.pos[1] += chunkSize;
+          } if (this.pos[1] > chunkSize) {
+            this.chunk = this.chunk.posYChunk;
+            this.updateChunk();
+            this.pos[1] -= chunkSize;
+          } if (this.pos[2] < 0) {
+            this.chunk = this.chunk.negZChunk;
+            this.updateChunk();
+            this.pos[2] += chunkSize;
+          } if (this.pos[2] > chunkSize) {
+            this.chunk = this.chunk.posZChunk;
+            this.updateChunk();
+            this.pos[2] -= chunkSize;
+          }
+
+          this.velocity[1] -= gravity*m/1000;
+          this.velocity[0] -= this.moveDir*this.moveSpeed*Math.sin(this.moveDir);
+          this.velocity[2] -= this.moveDir*this.moveSpeed*Math.cos(this.moveDir);
+          let friction = 0.001;
+          let hasFloor = false;
+          let floorY = 0;
+          if (this.velocity[1] <= 0) {
+            for (let y = Math.floor(this.pos[1]); y > this.pos[1]+this.velocity[1]*m/1000; y--)
+              for (let x = Math.floor(this.pos[0]-this.radius); x < this.pos[0] + this.radius; x++)
+                for (let z = Math.floor(this.pos[2]-this.radius); z < this.pos[2] + this.radius; z++)
+                  if (this.chunk.getBlock(x, y-1, z) != null) {
+                    friction = Math.max(friction, this.chunk.getBlock(x, y-1, z).friction);
+                    hasFloor = true;
+                    floorY = y;
+                    this.velocity[1] = 0.0001;
+                    this.pos[1] = y+0.0001;
+                  }
+          } else
+            for (let y = Math.ceil(playerPos[1]+playerHeight); y < playerPos[1]+this.height+this.velocity[1]*m/1000; y++)
+              for (let x = Math.floor(playerPos[0]-this.radius); x < playerPos[0] + this.radius; x++)
+                for (let z = Math.floor(playerPos[2]-this.radius); z < playerPos[2] + this.radius; z++)
+                  if (this.chunk.getBlock(x, y, z) != null) {
+                    this.velocity[1] = -0.0001;
+                    this.pos[1] = y-this.height;
+                  }
+          this.pos[1] += this.velocity[1]*m/1000;
+
+          if (this.velocity[0] < 0) {
+            for (let x = Math.floor(this.pos[0]-this.radius); x > this.pos[0]-this.radius+this.velocity[0]*m/1000; x--)
+              for (let y = Math.floor(this.pos[1]); y < this.pos[1] + this.height; y++)
+                for (let z = Math.floor(this.pos[2]-this.radius); z < this.pos[2]+this.radius; z++)
+                  if (this.chunk.getBlock(x-1, y, z) != null) {
+                    this.velocity[0] = 0.0001;
+                    this.pos[0] = x + 0.0001 + this.radius;
+                  }
+          } else
+            for (let x = Math.ceil(this.pos[0]+this.radius); x < this.pos[0]+this.radius+this.velocity[0]*m/1000; x++)
+              for (let y = Math.floor(this.pos[1]); y < this.pos[1] + this.height; y++)
+                for (let z = Math.floor(this.pos[2]-this.radius); z < this.pos[2]+this.radius; z++)
+                  if (this.chunk.getBlock(x, y, z) != null) {
+                    this.velocity[0] = -0.0001;
+                    this.pos[0] = x - 0.0001 - this.radius;
+                  }
+          this.pos[0] += this.velocity[0]*m/1000;
+
+          if (this.velocity[2] < 0) {
+            for (let z = Math.floor(this.pos[2]-this.radius); z > this.pos[2]-this.radius+this.velocity[2]*m/1000; z--)
+              for (let y = Math.floor(this.pos[1]); y < this.pos[1] + this.height; y++)
+                for (let x = Math.floor(this.pos[0]-this.radius); x < this.pos[0]+this.radius; x++)
+                  if (this.chunk.getBlock(x, y, z-1) != null) {
+                    this.velocity[2] = 0.0001;
+                    this.pos[2] = z + 0.0001 + this.radius;
+                  }
+          } else
+            for (let z = Math.ceil(this.pos[2]+this.radius); z < this.pos[2]+this.radius+this.velocity[2]*m/1000; z++)
+              for (let y = Math.floor(this.pos[1]); y < this.pos[1] + this.height; y++)
+                for (let x = Math.floor(this.pos[0]-this.radius); x < this.pos[0]+this.radius; x++)
+                  if (this.chunk.getBlock(x, y, z) != null) {
+                    this.velocity[2] = -0.0001;
+                    this.pos[2] = z - 0.0001 - this.radius;
+                  }
+          this.pos[2] += this.velocity[2]*m/1000;
+
+          let c = pythag(this.velocity[0],this.velocity[1],this.velocity[2]);
+
+          if (c < gravity * friction*m/1000) {
+            this.velocity[0] = 0;
+            if (hasFloor)
+              this.velocity[1] = (this.jump) ? this.jumpPower : 0;
+            else
+              this.velocity[1] = 0;
+            this.velocity[2] = 0;
+          } else {
+            this.velocity[0] *= (c-friction*gravity*m/1000)/c;
+            if (hasFloor)
+              this.velocity[1] = (this.jump) ? this.jumpPower : 0;
+            else
+              this.velocity[1] *= (c-friction*gravity*m/1000)/c;
+            this.velocity[2] *= (c-friction*gravity*m/1000)/c;
+          }
+
+          this.velocity[0] += this.moveDir*this.moveSpeed*Math.sin(this.moveDir);
+          this.velocity[2] += this.moveDir*this.moveSpeed*Math.cos(this.moveDir);
+
+        }
+
+        traceRender(x, y, z, m, n, s, o) {
+          let lm = lightMapFull[this.chunk.getLightLevel(this.pos[0], this.pos[1], this.pos[2])][this.chunk.getSkyLightLevel(this.pos[0], this.pos[1], this.pos[2])];
+          this.cubes.forEach((cube, i) => {
+            cube.traceRender(x-this.pos[0], y-this.pos[1], z-this.pos[2], m, n, s, o, lm);
+          });
+          return o;
+        }
+      }
+
+      class Item extends Entity {
+        constructor(pos, chunk, block) {
+          super([], pos, chunk, 0.2, 0.4);
+          this.block = block;
+          this.cubes = [new Cube([0,0.2,0], [0.2, 0.2, 0.2], [0, 0], block.texture)];
+          this.velocity = [Math.random()*2-1, Math.random()+1, Math.random()*2-1];
+          this.spin = (Math.random() > 0.5) ? 0.01 : -0.01;
+        }
+
+        tick(m) {
+          super.tick(m);
+          this.cubes[0].setRotation([this.cubes[0].rot[0]+this.spin,this.cubes[0].rot[1]]);
+
+          ml: if(Math.pow(playerPos[0]+activeChunk.cx*chunkSize-this.pos[0]-this.chunk.cx*chunkSize, 2) + Math.pow(playerPos[1]+activeChunk.cy*chunkSize-this.pos[1]-this.chunk.cy*chunkSize+0.5, 2) + Math.pow(playerPos[2]+activeChunk.cz*chunkSize-this.pos[2]-this.chunk.cz*chunkSize, 2) < 2.25) {
+            for (let i = 0; i < playerInventory.length; i++)
+              for (let j = 0; j < playerInventory[i].length; j++)
+                if (playerInventory[i][j] == this.block) {
+                  playerInventory[i][j] = this.block;
+                  playerInventoryAmounts[i][j] += 1;
+                  this.destroyed = true;
+                  break ml;
+                }
+            for (let i = 0; i < playerInventory.length; i++)
+              for (let j = 0; j < playerInventory[i].length; j++)
+                if (playerInventory[i][j] == null) {
+                  playerInventory[i][j] = this.block;
+                  playerInventoryAmounts[i][j] += 1;
+                  this.destroyed = true;
+                  break ml;
+                }
+          }
+        }
+      }
+      function copy(arr) {
+        result = [];
+        arr.forEach((item, i) => {
+          if (typeof item == Array)
+            result.push(copy(item));
+          else
+            result.push(item);
+        });
+        return result;
+      }
+      class Creature extends Entity {
+        constructor(cubes, pos, chunk, radius, height) {
+          super(cubes, pos, chunk, radius, height);
+          this.aiwait = 10;
+          this.aitimer = 0;
+          this.aidist = 5;
+          this.aitarget = [8, 8, 8];
+          this.path = [];
+          this.jumpPower = 10;
+          this.moveSpeed = 1;
+          this.moveForward = 0;
+          this.moveDir = 0;
+          this.visualDir = 0;
+        }
+
+        findPath(target, limit) {
+          let fp = null;
+          let paths = [[[Math.floor(this.pos[0]), Math.floor(this.pos[1]), Math.floor(this.pos[2])]]];
+          let pathdists = [0];
+          do {
+            let record = limit+1;
+            let recordIndex = 0;
+            paths.forEach((item, i) => {
+              if (item < record) {
+                record = item;
+                recordIndex = i;
+              }
+            });
+            let recordDist = pathdists[recordIndex];
+            paths.splice(recordIndex, 1);
+            pathdists.splice(recordIndex, 1);
+            function attemptAdd(pth, dist) {
+              for (let i = 0; i < paths.length; i++) {
+                let pathpos = paths[i][paths[i].length-1];
+                let h = pth[pth.length-1];
+                if (pathpos[0] == h[0] && pathpos[1] == h[1] && pathpos[2] == h[2])
+                  if (pathdists[i] < dist)
+                    return;
+                  else {
+                    paths.splice(i,1);
+                    pathdists.splice(i,1);
+                  }
+              }
+              paths.push(pth);
+              pathdists.push(dist);
+            }
+            if (recordDist < limit) {
+              let finalPos = record[record.length-1];
+
+              function pathtl(dx, dy, dz) {
+                if (this.chunk.getBlock(finalPos[0]+dx, finalPos[1]+dy, finalPos[2]+dz) == null && this.chunk.getBlock(finalPos[0]+dx, finalPos[1]+dy-1, finalPos[2]+dz) != null) {
+                  let c = copy(record);
+                  c.push(finalPos[0]+dx, finalPos[1]+dy, finalPos[2]+dz);
+                  attemptAdd(c, recordDist+1);
+                }
+              }
+
+              pathtl(1,-1,0);
+              pathtl(1,0,0);
+              pathtl(1,1,0);
+              pathtl(0,-1,1);
+              pathtl(0,0,1);
+              pathtl(0,1,1);
+              pathtl(-1,-1,0);
+              pathtl(-1,0,0);
+              pathtl(-1,1,0);
+              pathtl(0,-1,-1);
+              pathtl(0,0,-1);
+              pathtl(0,1,-1);
+
+              /*
+              if (this.chunk.getBlock(finalPos[0]+1, finalPos[1]-1, finalPos[2]) != null) {
+                let c = copy(record);
+                c.push(finalPos[0]+1, finalPos[1]-1, finalPos[2]);
+                attemptAdd(c, recordDist+1);
+              } else if (this.chunk.getBlock(finalPos[0]+1, finalPos[1], finalPos[2]) != null) {
+                let c = copy(record);
+                c.push(finalPos[0]+1, finalPos[1], finalPos[2]);
+                attemptAdd(c, recordDist+1);
+              } else if (this.chunk.getBlock(finalPos[0]+1, finalPos[1]+1, finalPos[2]) != null) {
+                let c = copy(record);
+                c.push(finalPos[0]+1, finalPos[1]+1, finalPos[2]);
+                attemptAdd(c, recordDist+1);
+              }
+
+              if (this.chunk.getBlock(finalPos[0]-1, finalPos[1]-1, finalPos[2]) != null) {
+              } else if (this.chunk.getBlock(finalPos[0]-1, finalPos[1], finalPos[2]) != null) {
+              } else if (this.chunk.getBlock(finalPos[0]-1, finalPos[1]+1, finalPos[2]) != null) {
+              }
+
+              if (this.chunk.getBlock(finalPos[0], finalPos[1]-1, finalPos[2]+1) != null) {
+              } else if (this.chunk.getBlock(finalPos[0], finalPos[1], finalPos[2]+1) != null) {
+              } else if (this.chunk.getBlock(finalPos[0], finalPos[1]+1, finalPos[2]+1) != null) {
+              }
+
+              if (this.chunk.getBlock(finalPos[0], finalPos[1]-1, finalPos[2]-1) == null) {
+              } else if (this.chunk.getBlock(finalPos[0], finalPos[1], finalPos[2]-1) != null) {
+              } else if (this.chunk.getBlock(finalPos[0], finalPos[1]+1, finalPos[2]-1) != null) {
+              }*/
+            }
+
+          } while (paths.length > 0)
+
+          for (let i = 0; i < paths.length; i++) {
+            item = paths[i];
+            last = item[item.length-1];
+            if (last[0] == target[0] && last[1] == target[1] && last[2] == target[2])
+              return item;
+            }
+          return [];
+        }
+
+        tick(m) {
+          super.tick(m);
+          this.aitimer -= m/1000;
+          let targetCandidates = [];
+          if (this.aitimer < 0) {
+            this.aitimer = this.aiwait;
+            for (let i = -this.aidist; i <= this.aidist; i++)
+              for (let j = -this.aidist; j <= this.aidist; j++)
+                for (let k = -this.aidist; k <= this.aidist; k++)
+                  if (this.chunk.getBlock(i + this.pos[0], k + this.pos[1], j + this.pos[2]) == null && ![null, undefined, E].has(this.chunk.getBlock(i + this.pos[0], k + this.pos[1] - 1, j + this.pos[2]))) {
+                    targetCandidates.push([i + this.pos[0], k + this.pos[1], j + this.pos[2]]);
+                    break;
+                  }
+            if (targetCandidates.length > 0) {
+              this.aitarget = targetCandidates[Math.floor(targetCandidates.length*Math.random()*0.999)];
+            }
+            this.path = this.findPath(this.aidist*3);
+          }
+
+          this.moveForward = 1;
+          let dx = this.path[0] - this.pos[0];
+          let dz = this.path[2] - this.pos[2];
+          this.moveDir = Math.atan2(dx, dz);
+        }
+      }
+
+      var chunkMap = new Map();
+      function toStringRGB(r, g, b) {
+        return (r < 16 ? "#0" : "#") + Math.floor(r).toString(16) + (g < 16 ? "0" : "") + Math.floor(g).toString(16) + (b < 16 ? "0" : "") + Math.floor(b).toString(16);
+      }
+
+      //Noise generator
+      function rng(n) {
+        return Math.exp(Math.exp(Math.exp(n)%3)%3)%1;
+      }
+
+      class WhiteNoise {
+        constructor(seed) {
+          this.wndict = new Map();
+          this.seed = seed;
+        }
+
+        get(x, y) {
+          x = Math.round(x);
+          y = Math.round(y);
+
+          let lstring = x.toString(16) + " " + y.toString(16);
+          if (this.wndict.has(lstring))
+            return this.wndict.get(lstring);
+          else if (x == 0) {
+            if (y == 0) {
+              this.wndict.set(lstring, rng(this.seed));
+              return rng(this.seed);
+            } else if (y < 0) {
+              this.wndict.set(lstring, rng(this.get(x, y+1)+Math.exp(1.1)));
+              return rng(this.get(x, y+1)+Math.exp(1.1));
+            } else {
+              this.wndict.set(lstring, rng(this.get(x, y-1)+Math.exp(1.2)));
+              return rng(this.get(x, y-1)+Math.exp(1.2));
+            }
+          } else if (x < 0) {
+            this.wndict.set(lstring, rng(this.get(x+1, y)+Math.exp(1.3)));
+            return rng(this.get(x+1, y)+Math.exp(1.3));
+          } else {
+            this.wndict.set(lstring, rng(this.get(x-1, y)+Math.exp(1.4)));
+            return rng(this.get(x-1, y)+Math.exp(1.4));
+          }
+        }
+      }
+
+      class Vector2 {
+        constructor(x, y) {
+          this.x = x;
+          this.y = y;
+        }
+
+        magnitudeSquared() {
+          return this.x*this.x + this.y*this.y;
+        }
+
+        dotProduct(v) {
+          return this.x*v.x + this.y*v.y;
+        }
+
+        shift(x, y) {
+          return new Vector2(this.x+x, this.y+y);
+        }
+      }
+
+      class PerlinNoise {
+        constructor(seed, scale) {
+          this.vx = new WhiteNoise(seed);
+          this.vy = new WhiteNoise(seed+0.3426324);
+          this.scale = scale;
+        }
+
+        get(x, y) {
+          let p = new Vector2(((x/this.scale)%1+1)%1, ((y/this.scale)%1+1)%1);
+          let nw = new Vector2(this.vx.get(Math.floor(x/this.scale), Math.floor(y/this.scale))*2-1, this.vy.get(Math.floor(x/this.scale), Math.floor(y/this.scale))*2-1).dotProduct(p);
+          let ne = new Vector2(this.vx.get(Math.ceil(x/this.scale), Math.floor(y/this.scale))*2-1, this.vy.get(Math.ceil(x/this.scale), Math.floor(y/this.scale))*2-1).dotProduct(p.shift(-1,0));
+          let sw = new Vector2(this.vx.get(Math.floor(x/this.scale), Math.ceil(y/this.scale))*2-1, this.vy.get(Math.floor(x/this.scale), Math.ceil(y/this.scale))*2-1).dotProduct(p.shift(0,-1));
+          let se = new Vector2(this.vx.get(Math.ceil(x/this.scale), Math.ceil(y/this.scale))*2-1, this.vy.get(Math.ceil(x/this.scale), Math.ceil(y/this.scale))*2-1).dotProduct(p.shift(-1,-1));
+          let xw = Math.cos(p.x*3.1416)/2+0.5;//Math.acos((p.x)*2-1)/3.1416;
+          let yn = Math.cos(p.y*3.1416)/2+0.5;//Math.acos((p.y)*2-1)/3.1416;
+          let xe = 1 - xw;
+          let ys = 1 - yn;
+          return nw*xw*yn + ne*xe*yn + sw*xw*ys + se*xe*ys;
+
+        }
+      }
+
+      var seed = null;//Math.random();
+      var perlinNoise1 = null;//new PerlinNoise(seed, 32);
+      var perlinNoise2 = null;//new PerlinNoise(seed+1, 16);
+      var perlinNoise3 = null;//new PerlinNoise(seed+2, 8);
+      var perlinNoise4 = null;//new PerlinNoise(seed+3, 4);
+      var perlinNoise5 = null;//new PerlinNoise(seed+4, 2);
+      var perlinNoise6 = null;//new PerlinNoise(seed+5, 1);
+      var perlinNoise7 = null;//new PerlinNoise(seed+6, 1);
+
+      function setSeed(n) {
+        seed = n;
+        perlinNoise1 = new PerlinNoise(seed, 32);
+        perlinNoise2 = new PerlinNoise(seed+1, 16);
+        perlinNoise3 = new PerlinNoise(seed+2, 8);
+        perlinNoise4 = new PerlinNoise(seed+3, 4);
+        perlinNoise5 = new PerlinNoise(seed+4, 2);
+        perlinNoise6 = new PerlinNoise(seed+5, 1);
+        perlinNoise7 = new PerlinNoise(seed+6, 1);
+      }
+
+      setSeed(Math.random());
+
+      function getMT(i, j) {
+        return perlinNoise1.get(i,j)/4 + perlinNoise2.get(i,j)/8 + perlinNoise3.get(i,j)/16 + perlinNoise4.get(i,j)/32 + perlinNoise5.get(i,j)/64 + perlinNoise6.get(i,j)/128;
+      }
+
+      function genFunction(x, z, y) {
+        //function h(a, b) {
+        //  return Math.sin(x) * Math.cos(z);
+        //}
+
+        //let mt = 8 + h(x/20,y/20) + h(x/5-3,y/5-5) + h(x-2,y+4);
+        let mt = getMT(x, z)*50;
+        //console.log(mt);
+        return [(y >= mt), (y < mt ? ((Math.abs(x+2*Math.sin(x+y+z))%5 < 1 && Math.abs(y+2*Math.sin(x+y+z))%5 < 1 && Math.abs(z+2*Math.sin(x+y+z))%5 < 5 - 10/Math.cosh((mt-y-2)/5)) ? sunStone : ((y < mt - 1) ? ((y < mt - 3) ? stone : dirt) : grass)) : null)];
+      }
+
+      var lightMap = [[0.1,0.1,0.1], [0.15,0.15,0.2], [0.25,0.25,0.3], [0.35,0.35,0.45], [0.5,0.5,0.5], [0.6,0.6,0.6], [0.7,0.7,0.7], [0.75,0.75,0.75], [0.80,0.80,0.80], [0.85,0.85,0.85], [0.9,0.9,0.9], [0.95,0.95,0.95], [1.0,1.0,1.0]];
+
+      var daytimeLightMap = [[0.0,0.0,0.0], [0.1,0.1,0.1], [0.2,0.2,0.2], [0.3,0.3,0.3], [0.4,0.4,0.4], [0.5,0.5,0.5], [0.6,0.6,0.6], [0.7,0.7,0.7], [0.8,0.8,0.8], [0.85,0.85,0.85], [0.9,0.9,0.9], [0.95,0.95,0.95], [1.0,1.0,1.0]];
+      var nighttimeLightMap = [[0.0,0.0,0.0], [0.01,0.01,0.05], [0.02,0.02,0.1], [0.03,0.03,0.15], [0.05,0.05,0.2], [0.07,0.07,0.25], [0.09,0.09,0.30], [0.12,0.12,0.35], [0.14,0.14,0.40], [0.16,0.16,0.45], [0.18,0.18,0.50], [0.20,0.20,0.55], [0.23,0.23,0.60]];
+
+      var skyLightMap = [[0.1,0.1,0.1], [0.2,0.2,0.2], [0.3,0.3,0.3], [0.4,0.4,0.4], [0.5,0.5,0.5], [0.6,0.6,0.6], [0.7,0.7,0.7], [0.75,0.75,0.75], [0.80,0.80,0.80], [0.85,0.85,0.85], [0.9,0.9,0.9], [0.95,0.95,0.95], [1.0,1.0,1.0]];
+
+
+      var gameTime = 0;
+
+      chunkMap.set('genFunction', genFunction);
+      chunkMap.set('lightMap', lightMap);
+      chunkMap.set('skyLightMap', skyLightMap);
+
+      const E = "";
+
+      class Chunk {
+        constructor(chunkMap, cx, cy, cz, genTerrain = true) {
+          this.chunkMap = chunkMap;
+          this.entities = [];
+          if (!this.chunkMap.has(cx.toString(16) + " " + cz.toString(16)))
+            this.chunkMap.set(cx.toString(16) + " " + cz.toString(16), new Map());
+          this.chunkMap.get(cx.toString(16) + " " + cz.toString(16)).set(cy.toString(16), this);
+          this.genFunction = chunkMap.get('genFunction');
+          this.cx = cx;
+          this.cy = cy;
+          this.cz = cz;
+          this.blocks = [];
+          this.lightLevels = [];
+          this.skyLightLevels = [];
+          for(let i = 0; i < chunkSize; i++) {
+            let iArray = [];
+            let liArray = [];
+            let sliArray = [];
+            for(let j = 0; j < chunkSize; j++) {
+              let jArray = [];
+              let ljArray = [];
+              let sljArray = [];
+              for(let k = 0; k < chunkSize; k++) {
+                jArray.push(null);
+                ljArray.push(0);
+                sljArray.push(0);
+              }
+              iArray.push(jArray);
+              liArray.push(ljArray);
+              sliArray.push(sljArray);
+            }
+            this.blocks.push(iArray);
+            this.lightLevels.push(liArray);
+            this.skyLightLevels.push(sliArray);
+          }
+          this.posXChunk = chunkMap.get((cx+1).toString(16) + " " + (cz).toString(16));
+          if (this.posXChunk == undefined)
+            this.posXChunk = null;
+          else {
+            this.posXChunk = this.posXChunk.get((cy).toString(16));
+            if (this.posXChunk == undefined)
+              this.posXChunk = null;
+            else
+              this.posXChunk.negXChunk = this;
+          }
+          this.negXChunk = chunkMap.get((cx-1).toString(16) + " " + (cz).toString(16));
+          if (this.negXChunk == undefined)
+            this.negXChunk = null;
+          else {
+            this.negXChunk = this.negXChunk.get((cy).toString(16));
+            if (this.negXChunk == undefined)
+              this.negXChunk = null;
+            else
+              this.negXChunk.posXChunk = this;
+          }
+          this.posYChunk = chunkMap.get((cx).toString(16) + " " + (cz).toString(16));
+          if (this.posYChunk == undefined)
+            this.posYChunk = null;
+          else {
+            this.posYChunk = this.posYChunk.get((cy+1).toString(16));
+            if (this.posYChunk == undefined)
+              this.posYChunk = null;
+            else
+              this.posYChunk.negYChunk = this;
+          }
+          this.negYChunk = chunkMap.get((cx).toString(16) + " " + (cz).toString(16));
+          if (this.negYChunk == undefined)
+            this.negYChunk = null;
+          else {
+            this.negYChunk = this.negYChunk.get((cy-1).toString(16));
+            if (this.negYChunk == undefined)
+              this.negYChunk = null;
+            else
+              this.negYChunk.posYChunk = this;
+          }
+          this.posZChunk = chunkMap.get((cx).toString(16) + " " + (cz+1).toString(16));
+          if (this.posZChunk == undefined)
+            this.posZChunk = null;
+          else {
+            this.posZChunk = this.posZChunk.get((cy).toString(16));
+            if (this.posZChunk == undefined)
+              this.posZChunk = null;
+            else
+              this.posZChunk.negZChunk = this;
+          }
+          this.negZChunk = chunkMap.get((cx).toString(16) + " " + (cz-1).toString(16));
+          if (this.negZChunk == undefined)
+            this.negZChunk = null;
+          else {
+            this.negZChunk = this.negZChunk.get((cy).toString(16));
+            if (this.negZChunk == undefined)
+              this.negZChunk = null;
+            else
+              this.negZChunk.posZChunk = this;
+          }
+
+          this.chunkEmpty = true;
+
+          //Generation
+          if (genTerrain) {
+            for(let i = 0; i < chunkSize; i++) {
+              for(let j = 0; j < chunkSize; j++) {
+                for(let k = 0; k < chunkSize; k++) {
+                  let block = this.genFunction(i + chunkSize*cx,j + chunkSize*cz,k + chunkSize*cy)[1];
+                  let isExposedToSkylight = this.genFunction(i + chunkSize*cx,j + chunkSize*cz,k + chunkSize*cy)[0];
+                  //console.log(block);
+                  this.blocks[i][j][k] = block;
+                  if (block != null)
+                    this.lightLevels[i][j][k] = block.luminousity;
+                  else {
+                    this.skyLightLevels[i][j][k] = (isExposedToSkylight ? (skyLightMap.length-1) : 0);
+                  }
+                }
+              }
+            }
+
+            //Lightmap Update
+
+            for(let x = -1; x < chunkSize+1; x++) {
+              for(let y = -1; y < chunkSize+1; y++) {
+                for(let z = -1; z < chunkSize+1; z++) {
+                  let block = this.getBlock(x, y, z);
+                  if (block == null) {
+                    this.lightPropagate(x,y,z,Math.max(Math.max(Math.max(Math.max(Math.max(this.getLightLevel(x-1,y,z), this.getLightLevel(x+1,y,z)), this.getLightLevel(x,y-1,z)), this.getLightLevel(x,y+1,z)), this.getLightLevel(x,y,z-1)), this.getLightLevel(x,y,z+1))-1);
+                    this.skyLightPropagate(x,y,z,this.getSkyLightLevel(x, y, z));
+                  } else if (block != E) {
+                    this.chunkEmpty = false;
+                  }
+                }
+              }
+            }
+          }
+
+          this.tainted = false;
+        }
+
+        getBlock(x, y, z) {
+          if (x >= 0 && x < chunkSize && y >= 0 && y < chunkSize && z >= 0 && z < chunkSize)
+            return this.blocks[Math.floor(x)][Math.floor(z)][Math.floor(y)];
+          else {
+            if (x < 0) {
+              if (this.negXChunk != null)
+                return this.negXChunk.getBlock(chunkSize+x,y,z);
+            } else if (x >= chunkSize) {
+              if (this.posXChunk != null)
+                return this.posXChunk.getBlock(x-chunkSize,y,z);
+            }
+            if (y < 0) {
+              if (this.negYChunk != null)
+                return this.negYChunk.getBlock(x,chunkSize+y,z);
+            } else if (y >= chunkSize) {
+              if (this.posYChunk != null)
+                return this.posYChunk.getBlock(x,y-chunkSize,z);
+            }
+            if (z < 0) {
+              if (this.negZChunk != null)
+                return this.negZChunk.getBlock(x,y,chunkSize+z);
+            } else if (z >= chunkSize) {
+              if (this.posZChunk != null)
+                return this.posZChunk.getBlock(x,y,z-chunkSize);
+            }
+            return E;
+          }
+        }
+
+        getLightLevel(x, y, z) {
+          if (x >= 0 && x < chunkSize && y >= 0 && y < chunkSize && z >= 0 && z < chunkSize)
+            return this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)];
+          else {
+            if (x < 0) {
+              if (this.negXChunk != null)
+                return this.negXChunk.getLightLevel(chunkSize+x,y,z);
+            } else if (x >= chunkSize) {
+              if (this.posXChunk != null)
+                return this.posXChunk.getLightLevel(x-chunkSize,y,z);
+            }
+            if (y < 0) {
+              if (this.negYChunk != null)
+                return this.negYChunk.getLightLevel(x,chunkSize+y,z);
+            } else if (y >= chunkSize) {
+              if (this.posYChunk != null)
+                return this.posYChunk.getLightLevel(x,y-chunkSize,z);
+            }
+            if (z < 0) {
+              if (this.negZChunk != null)
+                return this.negZChunk.getLightLevel(x,y,chunkSize+z);
+            } else if (z >= chunkSize) {
+              if (this.posZChunk != null)
+                return this.posZChunk.getLightLevel(x,y,z-chunkSize);
+            }
+            return 0;
+          }
+        }
+
+        getSkyLightLevel(x, y, z) {
+          if (x >= 0 && x < chunkSize && y >= 0 && y < chunkSize && z >= 0 && z < chunkSize)
+            return this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)];
+          else {
+            if (x < 0) {
+              if (this.negXChunk != null)
+                return this.negXChunk.getSkyLightLevel(chunkSize+x,y,z);
+            } else if (x >= chunkSize) {
+              if (this.posXChunk != null)
+                return this.posXChunk.getSkyLightLevel(x-chunkSize,y,z);
+            }
+            if (y < 0) {
+              if (this.negYChunk != null)
+                return this.negYChunk.getSkyLightLevel(x,chunkSize+y,z);
+            } else if (y >= chunkSize) {
+              if (this.posYChunk != null)
+                return this.posYChunk.getSkyLightLevel(x,y-chunkSize,z);
+            }
+            if (z < 0) {
+              if (this.negZChunk != null)
+                return this.negZChunk.getSkyLightLevel(x,y,chunkSize+z);
+            } else if (z >= chunkSize) {
+              if (this.posZChunk != null)
+                return this.posZChunk.getSkyLightLevel(x,y,z-chunkSize);
+            }
+            return 0;
+          }
+        }
+
+        lightPropagate(x, y, z, level) {
+          if (this.getLightLevel(x,y,z) >= level)
+            return E;
+          else if (x < 0) {
+            if (this.negXChunk == null)
+              return E;
+            else
+              this.negXChunk.lightPropagate(chunkSize+x,y,z,level);
+          } else if (x >= chunkSize) {
+            if (this.posXChunk == null)
+              return E;
+            else
+              this.posXChunk.lightPropagate(x-chunkSize,y,z,level);
+          } else if (y < 0) {
+            if (this.negYChunk == null)
+              return E;
+            else
+              this.negYChunk.lightPropagate(x,chunkSize+y,z,level);
+          } else if (y >= chunkSize) {
+            if (this.posYChunk == null)
+              return E;
+            else
+              this.posYChunk.lightPropagate(x,y-chunkSize,z,level);
+          } else if (z < 0) {
+            if (this.negZChunk == null)
+              return E;
+            else
+              this.negZChunk.lightPropagate(x,y,chunkSize+z,level);
+          } else if (z >= chunkSize) {
+            if (this.posZChunk == null)
+              return E;
+            else
+              this.posZChunk.lightPropagate(x,y,z-chunkSize,level);
+          } else {
+            this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = level;
+            if (level > 1) {
+              if (this.getBlock(x-1,y,z) == null || this.getBlock(x-1,y,z) == E)
+                this.lightPropagate(x-1,y,z,level-1);
+              if (this.getBlock(x+1,y,z) == null || this.getBlock(x+1,y,z) == E)
+                this.lightPropagate(x+1,y,z,level-1);
+              if (this.getBlock(x,y-1,z) == null || this.getBlock(x,y-1,z) == E)
+                this.lightPropagate(x,y-1,z,level-1);
+              if (this.getBlock(x,y+1,z) == null || this.getBlock(x,y+1,z) == E)
+                this.lightPropagate(x,y+1,z,level-1);
+              if (this.getBlock(x,y,z-1) == null || this.getBlock(x,y,z-1) == E)
+                this.lightPropagate(x,y,z-1,level-1);
+              if (this.getBlock(x,y,z+1) == null || this.getBlock(x,y,z+1) == E)
+                this.lightPropagate(x,y,z+1,level-1);
+            }
+          }
+        }
+
+        revLightPropagate(x, y, z) {
+          if (x < 0) {
+            if (this.negXChunk == null)
+              return E;
+            else
+              this.negXChunk.revLightPropagate(chunkSize+x,y,z);
+          } else if (x >= chunkSize) {
+            if (this.posXChunk == null)
+              return E;
+            else
+              this.posXChunk.revLightPropagate(x-chunkSize,y,z);
+          } else if (y < 0) {
+            if (this.negYChunk == null)
+              return E;
+            else
+              this.negYChunk.revLightPropagate(x,chunkSize+y,z);
+          } else if (y >= chunkSize) {
+            if (this.posYChunk == null)
+              return skyLightMap.length-1;
+            else
+              this.posYChunk.revLightPropagate(x,y-chunkSize,z);
+          } else if (z < 0) {
+            if (this.negZChunk == null)
+              return E;
+            else
+              this.negZChunk.revLightPropagate(x,y,chunkSize+z);
+          } else if (z >= chunkSize) {
+            if (this.posZChunk == null)
+              return E;
+            else
+              this.posZChunk.revLightPropagate(x,y,z-chunkSize);
+          } else {
+            let olv = this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)];
+            let ofst = 0;
+            if (this.getBlock(x,y,z) == null)
+              this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = Math.max(0,Math.max(Math.max(Math.max(Math.max(Math.max(this.getLightLevel(x-1,y,z), this.getLightLevel(x+1,y,z)), this.getLightLevel(x,y-1,z)), this.getLightLevel(x,y+1,z)), this.getLightLevel(x,y,z-1)), this.getLightLevel(x,y,z+1))-1);
+            else
+              this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = this.getBlock(x,y,z).luminousity;
+            if (olv != this.lightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)]) {
+              ofst = 1;
+              if (this.getLightLevel(x-1,y,z) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x-1,y,z);
+              if (this.getLightLevel(x+1,y,z) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x+1,y,z);
+              if (this.getLightLevel(x,y-1,z) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x,y-1,z);
+              if (this.getLightLevel(x,y+1,z) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x,y+1,z);
+              if (this.getLightLevel(x,y,z-1) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x,y,z-1);
+              if (this.getLightLevel(x,y,z+1) > this.getLightLevel(x,y,z)-ofst)
+                this.revLightPropagate(x,y,z+1);
+            }
+          }
+        }
+
+        skyLightPropagate(x, y, z, level, bg=true) {
+          if ((this.getSkyLightLevel(x,y,z) >= level) && !bg || level < 0)
+            return E;
+          else if (x < 0) {
+            if (this.negXChunk == null)
+              return E;
+            else
+              this.negXChunk.skyLightPropagate(chunkSize+x,y,z,level);
+          } else if (x >= chunkSize) {
+            if (this.posXChunk == null)
+              return E;
+            else
+              this.posXChunk.skyLightPropagate(x-chunkSize,y,z,level);
+          } else if (y < 0) {
+            if (this.negYChunk == null)
+              return E;
+            else
+              this.negYChunk.skyLightPropagate(x,chunkSize+y,z,level);
+          } else if (y >= chunkSize) {
+            if (this.posYChunk == null)
+              return E;
+            else
+              this.posYChunk.skyLightPropagate(x,y-chunkSize,z,level);
+          } else if (z < 0) {
+            if (this.negZChunk == null)
+              return E;
+            else
+              this.negZChunk.skyLightPropagate(x,y,chunkSize+z,level);
+          } else if (z >= chunkSize) {
+            if (this.posZChunk == null)
+              return E;
+            else
+              this.posZChunk.skyLightPropagate(x,y,z-chunkSize,level);
+          } else {
+            this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = level;
+            if (level > 1) {
+              if (this.getBlock(x-1,y,z) == null || this.getBlock(x-1,y,z) == E)
+                this.skyLightPropagate(x-1,y,z,level-1,false);
+              if (this.getBlock(x+1,y,z) == null || this.getBlock(x+1,y,z) == E)
+                this.skyLightPropagate(x+1,y,z,level-1,false);
+              if (this.getBlock(x,y-1,z) == null || this.getBlock(x,y-1,z) == E)
+                this.skyLightPropagate(x,y-1,z,((level >= skyLightMap.length-1) ? level : (level-1)),false);
+              if (this.getBlock(x,y+1,z) == null || this.getBlock(x,y+1,z) == E)
+                this.skyLightPropagate(x,y+1,z,level-1,false);
+              if (this.getBlock(x,y,z-1) == null || this.getBlock(x,y,z-1) == E)
+                this.skyLightPropagate(x,y,z-1,level-1,false);
+              if (this.getBlock(x,y,z+1) == null || this.getBlock(x,y,z+1) == E)
+                this.skyLightPropagate(x,y,z+1,level-1,false);
+            }
+          }
+        }
+
+        revSkyLightPropagate(x, y, z) {
+          if (x < 0) {
+            if (this.negXChunk == null)
+              return E;
+            else
+              this.negXChunk.revSkyLightPropagate(chunkSize+x,y,z);
+          } else if (x >= chunkSize) {
+            if (this.posXChunk == null)
+              return E;
+            else
+              this.posXChunk.revSkyLightPropagate(x-chunkSize,y,z);
+          } else if (y < 0) {
+            if (this.negYChunk == null)
+              return E;
+            else
+              this.negYChunk.revSkyLightPropagate(x,chunkSize+y,z);
+          } else if (y >= chunkSize) {
+            if (this.posYChunk == null)
+              return E;
+            else
+              this.posYChunk.revSkyLightPropagate(x,y-chunkSize,z);
+          } else if (z < 0) {
+            if (this.negZChunk == null)
+              return E;
+            else
+              this.negZChunk.revSkyLightPropagate(x,y,chunkSize+z);
+          } else if (z >= chunkSize) {
+            if (this.posZChunk == null)
+              return E;
+            else
+              this.posZChunk.revSkyLightPropagate(x,y,z-chunkSize);
+          } else {
+            let ofs = 0;
+            let osk = this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)];
+            if (this.getBlock(x,y,z) == null) {
+              this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = Math.max(0,Math.max(Math.max(Math.max(Math.max(Math.max(this.getSkyLightLevel(x-1,y,z), this.getSkyLightLevel(x+1,y,z)), this.getSkyLightLevel(x,y-1,z)), (this.getSkyLightLevel(x,y+1,z) >= skyLightMap.length-1) ? (this.getSkyLightLevel(x,y+1,z) + 1) : this.getSkyLightLevel(x,y+1,z)), this.getSkyLightLevel(x,y,z-1)), this.getSkyLightLevel(x,y,z+1))-1);
+              ofs = ((this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] == osk) ? 0 : 1);
+            } else
+              this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = 0;
+            //if (this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] > 0) {
+            if (this.getSkyLightLevel(x-1,y,z) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x-1,y,z);
+            if (this.getSkyLightLevel(x+1,y,z) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x+1,y,z);
+            if (this.getSkyLightLevel(x,y-1,z) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x,y-1,z);
+            if (this.getSkyLightLevel(x,y+1,z) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x,y+1,z);
+            if (this.getSkyLightLevel(x,y,z-1) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x,y,z-1);
+            if (this.getSkyLightLevel(x,y,z+1) > this.getSkyLightLevel(x,y,z)-ofs)
+              this.revSkyLightPropagate(x,y,z+1);
+            //}
+
+          }
+        }
+
+        setBlock(x, y, z, block) {
+          if (x < 0) {
+            if (this.negXChunk == null)
+              return E;
+            else
+              this.negXChunk.setBlock(chunkSize+x,y,z,block);
+          } else if (x >= chunkSize) {
+            if (this.posXChunk == null)
+              return E;
+            else
+              this.posXChunk.setBlock(x-chunkSize,y,z,block);
+          } else if (y < 0) {
+            if (this.negYChunk == null)
+              return E;
+            else
+              this.negYChunk.setBlock(x,chunkSize+y,z,block);
+          } else if (y >= chunkSize) {
+            if (this.posYChunk == null)
+              return E;
+            else
+              this.posYChunk.setBlock(x,y-chunkSize,z,block);
+          } else if (z < 0) {
+            if (this.negZChunk == null)
+              return E;
+            else
+              this.negZChunk.setBlock(x,y,chunkSize+z,block);
+          } else if (z >= chunkSize) {
+            if (this.posZChunk == null)
+              return E;
+            else
+              this.posZChunk.setBlock(x,y,z-chunkSize,block);
+          } else {
+            this.blocks[Math.floor(x)][Math.floor(z)][Math.floor(y)] = null;
+            this.tainted = true;
+            this.lightPropagate(x,y,z,Math.max(Math.max(Math.max(Math.max(Math.max(this.getLightLevel(x-1,y,z), this.getLightLevel(x+1,y,z)), this.getLightLevel(x,y-1,z)), this.getLightLevel(x,y+1,z)), this.getLightLevel(x,y,z-1)), this.getLightLevel(x,y,z+1))-1);
+            try {
+              this.revLightPropagate(x,y,z);
+              //this.revSkyLightPropagate(x,y,z);
+              if (block != null) {
+                this.chunkEmpty = false;
+                this.blocks[Math.floor(x)][Math.floor(z)][Math.floor(y)] = block;
+                this.skyLightLevels[Math.floor(x)][Math.floor(z)][Math.floor(y)] = 0;
+                this.lightPropagate(x,y,z,block.luminousity);
+                //for (let nft = 0; nft < skyLightMap.length; nft++) {
+                this.revLightPropagate(x,y,z);
+                this.revSkyLightPropagate(x,y,z);
+                //}
+              } else {
+                this.skyLightPropagate(x,y,z,Math.max(Math.max(Math.max(Math.max(Math.max(this.getSkyLightLevel(x-1,y,z), this.getSkyLightLevel(x+1,y,z)), this.getSkyLightLevel(x,y-1,z)), (this.getSkyLightLevel(x,y+1,z) >= skyLightMap.length-1) ? (this.getSkyLightLevel(x,y+1,z)+1) : this.getSkyLightLevel(x,y+1,z)), this.getSkyLightLevel(x,y,z-1)), this.getSkyLightLevel(x,y,z+1))-1);
+              }
+            } catch(error) {
+              console.error("Error: " + error.message);
+            }
+          }
+        }
+
+        setBlockYs(x, z, yi, yf, block) {
+          yi = constrain(0,Math.floor(yi),16);
+          yf = constrain(0,Math.floor(yf),16);
+          for (let i = yi; i < yf; i++) {
+            this.blocks[Math.floor(x)][Math.floor(z)][i] = block;
+          }
+        }
+        loadUpChunk() {
+          //this.posYChunk =
+          if (!this.chunkMap.has((this.cx).toString(16) + " " + (this.cz).toString(16)) || !this.chunkMap.get((this.cx).toString(16) + " " + (this.cz).toString(16)).has((this.cy+1).toString(16)))
+            this.posYChunk = new Chunk(this.chunkMap, this.cx,this.cy+1,this.cz);
+          //this.posYChunk.negYChunk = this;
+          return this.posYChunk;
+        }
+        loadDownChunk() {
+          //this.negYChunk =
+          if (!this.chunkMap.has((this.cx).toString(16) + " " + (this.cz).toString(16)) || !this.chunkMap.get((this.cx).toString(16) + " " + (this.cz).toString(16)).has((this.cy-1).toString(16)))
+            this.negYChunk = new Chunk(this.chunkMap, this.cx,this.cy-1,this.cz);
+          //this.negYChunk.posYChunk = this;
+          return this.negYChunk;
+        }
+        loadLeftChunk() {
+          //this.negXChunk =
+          if (!this.chunkMap.has((this.cx-1).toString(16) + " " + (this.cz).toString(16)) || !this.chunkMap.get((this.cx-1).toString(16) + " " + (this.cz).toString(16)).has((this.cy).toString(16)))
+            this.negXChunk = new Chunk(this.chunkMap, this.cx-1,this.cy,this.cz);
+          //this.negXChunk.posXChunk = this;
+          return this.negXChunk;
+        }
+        loadRightChunk() {
+          //this.posXChunk =
+          if (!this.chunkMap.has((this.cx+1).toString(16) + " " + (this.cz).toString(16)) || !this.chunkMap.get((this.cx+1).toString(16) + " " + (this.cz).toString(16)).has((this.cy).toString(16)))
+            this.posXChunk = new Chunk(this.chunkMap, this.cx+1,this.cy,this.cz);
+          //this.posXChunk.negXChunk = this;
+          return this.posXChunk;
+        }
+        loadForwardChunk() {
+          //this.posZChunk =
+          if (!this.chunkMap.has((this.cx).toString(16) + " " + (this.cz+1).toString(16)) || !this.chunkMap.get((this.cx).toString(16) + " " + (this.cz+1).toString(16)).has((this.cy).toString(16)))
+            this.posZChunk = new Chunk(this.chunkMap, this.cx,this.cy,this.cz+1);
+          //this.posZChunk.negZChunk = this;
+          return this.posZChunk;
+        }
+        loadBackChunk() {
+          //this.negZChunk =
+          if (!this.chunkMap.has((this.cx).toString(16) + " " + (this.cz-1).toString(16)) || !this.chunkMap.get((this.cx).toString(16) + " " + (this.cz-1).toString(16)).has((this.cy).toString(16)))
+            this.negZChunk = new Chunk(this.chunkMap, this.cx,this.cy,this.cz-1);
+          //this.negZChunk.posZChunk = this;
+          return this.negZChunk;
+        }
+        tickEntities(tPMS) {
+          let i = 0;
+          while(i < this.entities.length) {
+            if (this.entities[i].destroyed) {
+              this.entities.splice(i,1);
+            } else {
+              this.entities[i].tick(tPMS);
+              i++;
+            }
+          }
+          return this;
+        }
+      }
+
+      function pythag(a, b, c) {
+        return Math.sqrt(a*a + b*b + c*c);
+      }
+
+      var mspf = 15;
+      //var renderDistance = 1;
+      //var seed = 0;
+      var gamePaused = false;
+      var playerPos = [8.5,14.5,8.5];
+      var playerInventory = [[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null]];
+      var playerInventoryAmounts = [[0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0]];
+      var itemSelected = 0;
+      var jumpPower = 3;
+      var moveSpeed = 2;
+      var playerAngle = [0,0.001];
+      var playerVelocity = [0,-0.0001,0];
+      var playerRadius = 0.2;
+      var playerHeight = 1.9;
+      var playerReach = 5;
+      var selectedBlock = [0,0,0];
+      var placeBlock = [0,0,0];
+      var hasBlockSelected = false;
+      var gravity = 4;
+      var grass = new Block([[[0,255,0],[0,0,255]],[[255,0,0],[0,255,0]]], null, 2.01, 0);
+      var sunStone = new Block([[[0,255,0],[0,0,255]],[[255,0,0],[0,255,0]]], null, 2.01, 12);
+      var dirt = new Block([[[0,255,0],[0,0,255]],[[255,0,0],[0,255,0]]], null, 2.01, 0);
+      var stone = new Block([[[0,255,0],[0,0,255]],[[255,0,0],[0,255,0]]], null, 2.01, 0);
+      var activeChunk = new Chunk(chunkMap, 0, 0, 0);
+      var lightMapFull = [];
+      for (let i = 0; i < lightMap.length; i++) {
+        lightMapFull.push([]);
+        for (let j = 0; j < skyLightMap.length; j++) {
+          lightMapFull[i].push(undefined);
+          lightMapFull[i][j] = [constrain(0, Math.sqrt(lightMap[i][0]*lightMap[i][0] + skyLightMap[j][0]*skyLightMap[j][0]), 1), constrain(0, Math.sqrt(lightMap[i][1]*lightMap[i][1] + skyLightMap[j][1]*skyLightMap[j][1]), 1), constrain(0, Math.sqrt(lightMap[i][2]*lightMap[i][2] + skyLightMap[j][2]*skyLightMap[j][2]), 1)];
+        }
+      }
+      //playerInventory[0][0] = grass;
+      //playerInventoryAmounts[0][0] = 1;
+
+      //console.log(activeChunk);
+      //console.log(239*0.1);//chunkMap.get('lightMap')[0]);
+
+      activeChunk.loadDownChunk().loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+      activeChunk.loadUpChunk().loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+      activeChunk.loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+
+      //activeChunk.setBlock(8,10,8,sunStone);
+
+      //activeChunk.blocks[8][8][6] = null;
+      //activeChunk.blocks[8][6][6] = null;
+      //activeChunk.blocks[8][7][9] = grass;
+      //console.log(activeChunk);
+      let cameraPos = playerPos;
+      let cameraAngle = playerAngle;
+
+      function loadGame(loadString) {
+        chunkMap.clear();
+        chunkMap.set("genFunction", genFunction);
+        chunkMap.set("lightMap", lightMap);
+
+        let l = loadString.split("~");
+        setSeed(parseFloat(l.pop()));
+        let ps = l[0].split(",");
+        //console.log(ps);
+        playerPos = [parseFloat(ps[0]),parseFloat(ps[1]),parseFloat(ps[2])];
+        gameTime = parseFloat(ps[3]);
+        //console.log(playerPos);
+        ps = ps.splice(4);
+        for (let i = 0; i < ps.length/2; i++) {
+          let j = 0;
+          let k = i;
+          while (k >= playerInventory[j].length) {
+            k -= playerInventory[j].length;
+            j++;
+          }
+          let bid = parseInt(ps[2*i], 16) - 1;
+
+          playerInventory[j][k] = (bid == -1) ? null : blockList[bid];
+          playerInventoryAmounts[j][k] = parseInt(ps[2*i+1], 16);
+          if (playerInventoryAmounts[j][k] == 0) {
+            playerInventory[j][k] = null;
+          }
+        }
+
+
+        l = l.splice(1);
+        l.forEach((chunkData, i) => {
+          let r = chunkData.split('|');
+          let cp = r[0].split(',');
+          //console.log(cp);
+          let blockData = r[1].split(',');
+          //console.log(blockData);
+          let lightData = r[2].split(',');
+          let skyLightData = r[3].split(',');
+          //console.log(lightData);
+          let chunk = new Chunk(chunkMap, parseInt(cp[0],16), parseInt(cp[1],16), parseInt(cp[2],16), false);
+          //console.log(chunk);
+          for (let i = 0; i < chunkSize; i++)
+            for (let j = 0; j < chunkSize; j++)
+              for (let k = 0; k < chunkSize; k++) {
+                let blockId = parseInt(blockData[chunkSize*chunkSize*i + chunkSize*j + k],16);
+                chunk.blocks[i][j][k] = (blockId == 0) ? null : blockList[blockId-1];
+                if (blockId != 0)
+                  chunk.chunkEmpty = false;
+                chunk.lightLevels[i][j][k] = parseInt(lightData[chunkSize*chunkSize*i + chunkSize*j + k],16);
+                chunk.skyLightLevels[i][j][k] = parseInt(skyLightData[chunkSize*chunkSize*i + chunkSize*j + k],16);
+              }
+          chunk.tainted = true;
+        });
+        //console.log(Math.floor(playerPos[0]/16).toString() + " " + Math.floor(playerPos[2]/16).toString());
+        try {
+          activeChunk = chunkMap.get(Math.floor(playerPos[0]/16).toString(16) + " " + Math.floor(playerPos[2]/16).toString(16)).get(Math.floor(playerPos[1]/16).toString(16));
+        } catch (error) {
+          activeChunk = new Chunk(chunkMap, Math.floor(playerPos[0]/16), Math.floor(playerPos[1]/16), Math.floor(playerPos[2]/16));
+        }
+        playerPos[0] %= 16;
+        playerPos[1] %= 16;
+        playerPos[2] %= 16;
+        playerPos[0] += 16;
+        playerPos[1] += 16;
+        playerPos[2] += 16;
+        playerPos[0] %= 16;
+        playerPos[1] %= 16;
+        playerPos[2] %= 16;
+        playerVelocity = [0, 0, 0];
+
+        for (let i = 0; i < keys.length; i++) {
+          keys[i] = false;
+          keyss[i] = false;
+        }
+
+        gamePaused = false;
+      }
+
+      document.getElementById('fileInput').addEventListener('change', (event) => {
+        //chunkMap.clear();
+        //chunkMap.set("genFunction", genFunction);
+        //chunkMap.set("lightMap", lightMap);
+        if (event.target == null)
+          return;
+
+        event.target.files[0].text().then(loadGame);//document.getElementById("fileInput").content[0];
+        document.getElementById('resetInput').click();
+      });
+
+      async function tickMain() {
+
+        let millis = Date.now();
+        let v = 0;
+        let tPMS = 15;
+        while (true) {
+          await sleep(1);
+
+          if (gamePaused) {
+            if (keyss[27]) {
+              for (let i = 0; i < keys.length; i++) {
+                keys[i] = false;
+                keyss[i] = false;
+              }
+              gamePaused = false;
+              //canvas.requestPointerLock({
+              //  unadjustedMovement: true,
+              //});
+              //setTimeout(100, () => {gamePaused = false;})
+            }
+            millis = Date.now();
+            continue;
+          }
+
+          //activeChunk.loadDownChunk().loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+          //activeChunk.loadUpChunk().loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+          //activeChunk.loadForwardChunk().loadLeftChunk().loadBackChunk().loadBackChunk().loadRightChunk().loadRightChunk().loadForwardChunk().loadForwardChunk();
+
+          if (lmbs) {
+            lmbs = false;
+            console.log(selectedBlock);
+            let blockBroken = activeChunk.getBlock(selectedBlock[0], selectedBlock[1], selectedBlock[2]);
+            if (blockBroken != null) {
+              new Item([Math.floor(selectedBlock[0])+0.5, Math.floor(selectedBlock[1]), Math.floor(selectedBlock[2])+0.5], activeChunk, blockBroken)
+              activeChunk.setBlock(selectedBlock[0], selectedBlock[1], selectedBlock[2], null);
+              }
+            } else if (mmbs || keyss[49]) {
+            mmbs = false;
+            keyss[49] = false;
+            //console.log(placeBlock);
+            //activeChunk.setBlock(placeBlock[0], placeBlock[1], placeBlock[2], grass);
+          } else if (rmbs || keyss[50]) {
+            rmbs = false;
+            keyss[50] = false;
+            console.log(placeBlock);
+            if (playerInventory[0][itemSelected] != null && activeChunk.getBlock(placeBlock[0], placeBlock[1], placeBlock[2]) == null) {
+              playerInventoryAmounts[0][itemSelected] -= 1;
+              activeChunk.setBlock(placeBlock[0], placeBlock[1], placeBlock[2], playerInventory[0][itemSelected]);
+              if (playerInventoryAmounts[0][itemSelected] == 0)
+                playerInventory[0][itemSelected] = null;
+            }
+          }
+
+
+          v += (Date.now() - millis + 1000)%1000;
+          gameTime += (Date.now() - millis)/60000;
+
+
+          let factor = 1;
+          if (gameTime%24 > 5 && gameTime%24 < 7)
+            factor = 1-(gameTime%24-5)/2;
+          else if (gameTime%24 > 7 && gameTime%24 < 17)
+            factor = 0;
+          else if (gameTime%24 > 17 && gameTime%24 < 19)
+            factor = (gameTime%24-17)/2;
+
+          for (let i = 0; i < skyLightMap.length; i++) {
+            skyLightMap[i] = [daytimeLightMap[i][0]*factor + nighttimeLightMap[i][0]*(1-factor), daytimeLightMap[i][1]*factor + nighttimeLightMap[i][1]*(1-factor), daytimeLightMap[i][2]*factor + nighttimeLightMap[i][2]*(1-factor)];
+          }
+
+          millis = Date.now();
+          for (v = v; v > 0; v -= tPMS) {
+            activeChunk.tickEntities(tPMS).loadDownChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS).loadLeftChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS);
+            activeChunk.loadUpChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS).loadLeftChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS);
+            activeChunk.loadForwardChunk().tickEntities(tPMS).loadLeftChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadBackChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadRightChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS).loadForwardChunk().tickEntities(tPMS);
+            if (mousePos.length == 0) {
+              cameraAngle = [0,0];
+            } //else {
+              //cameraAngle[0] = mousePos[0]/100+0.0001;
+              //playerAngle[1] = constrain(-1.5708,playerAngle[1],1.5708);
+            //}
+            //activeChunk.entities.forEach((item, i) => {
+
+            //  item.tick()
+            //});
+
+
+            let hasFloor = false;
+            let friction = 0.001;
+            let floorY = -9999;
+            if (playerVelocity[1] == 0)
+              playerVelocity[1] = -0.0000000001;
+
+            let x = playerPos[0];
+            let y = playerPos[1];
+            let z = playerPos[2];
+            let q = pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/300+6;
+            //let wallFactor = 1;
+            /*jj: while(q > 0) {
+              q--;
+              //console.log(playerPos);
+              let xd = (playerVelocity[0] < 0) ? x-0.0001-playerRadius-Math.ceil(x-1.000000-playerRadius) : Math.floor(x+1.0000001+playerRadius) - (x+playerRadius);
+              let yd = (playerVelocity[1] < 0) ? y-0.0001-Math.ceil(y-1.0000001) : Math.floor(y+1.0001001+playerHeight) - (y+playerHeight);
+              let zd = (playerVelocity[2] < 0) ? z-0.0001-playerRadius-Math.ceil(z-1.000000-playerRadius) : Math.floor(z+1.0000001+playerRadius) - (z+playerRadius);
+              let m = playerVelocity[0]/playerVelocity[1];
+              let n = playerVelocity[2]/playerVelocity[1];
+              if (yd*m < xd && yd*n < zd) {
+                console.log ('Y');
+                if (playerVelocity[1] < 0) {
+                  x -= yd*m;
+                  y -= yd;
+                  z -= yd*n;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for(let mx = Math.floor(x-playerRadius); mx < x+playerRadius; mx++)
+                    for(let mz = Math.floor(z-playerRadius); mz < z+playerRadius; mz++)
+                      if (activeChunk.getBlock(mx, y-0.999, mz) != null) {
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        hasFloor = true;
+                        floorY = Math.max(floorY, y);
+                        friction = Math.max(friction, activeChunk.getBlock(mx, y-1, mz).friction);
+                        playerPos[1] = y + 0.00001;
+                        y = playerPos[1];
+                        playerVelocity[1] = 0.0000000001;
+                        continue jj;
+                      }
+                } else {
+                  x += yd*m;
+                  y += yd;
+                  z += yd*n;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for(let mx = Math.floor(x-playerRadius); mx < x+playerRadius; mx++)
+                    for(let mz = Math.floor(z-playerRadius); mz < z+playerRadius; mz++)
+                      if (activeChunk.getBlock(mx, y+playerHeight+0.001, mz) != null) {
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        playerPos[1] = y-0.00001;
+                        y = playerPos[1];
+                        playerVelocity[1] = -0.0000000001;
+                        continue jj;
+                      }
+                }
+              }
+              if (xd*n < zd*m) {
+                console.log ('X');
+                if (playerVelocity[0] < 0){
+                  x -= xd;
+                  y -= xd/m;
+                  z -= xd/m*n;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for (let mz = Math.floor(z-playerRadius); mz < z+playerRadius; mz++)
+                    for (let my = Math.floor(y); my < y+playerHeight; my++)
+                      if (activeChunk.getBlock(x-0.999, my, mz) != null) {
+                        console.log('sdsda')
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        playerPos[0] = x+0.0001;
+                        x = playerPos[0];
+                        playerVelocity[0] = 0.0000000001;
+                        continue jj;
+                      }
+                } else {
+                  x += xd;
+                  y += xd/m;
+                  z += xd/m*n;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for (let mz = Math.floor(z-playerRadius); mz < z+playerRadius; mz++)
+                    for (let my = Math.floor(y); my < y+playerHeight; my++)
+                      if (activeChunk.getBlock(x+0.999, my, mz) != null) {
+                        console.log('sdsda')
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        playerPos[0] = x-0.0001;
+                        x = playerPos[0];
+                        playerVelocity[0] = -0.0000000001;
+                        continue jj;
+                      }
+                }
+              } else {
+                console.log ('Z');
+                if (playerVelocity[2] < 0) {
+                  x -= zd/n*m;
+                  y -= zd/n;
+                  z -= zd;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for (let mx = Math.floor(x-playerRadius); mx < x+playerRadius; mx++)
+                    for (let my = Math.floor(y); my < y+playerHeight; my++)
+                      if (activeChunk.getBlock(mx, my, z-0.999) != null) {
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        playerPos[2] = z+0.0001;
+                        z = playerPos[2];
+                        playerVelocity[2] = 0.0000000001;
+                        continue jj;
+                      }
+                } else {
+                  x += zd/n*m;
+                  y += zd/n;
+                  z += zd;
+                  if (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z) > pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000*wallFactor)
+                    break jj;
+
+                  for (let mx = Math.floor(x-playerRadius); mx < x+playerRadius; mx++)
+                    for (let my = Math.floor(y); my < y+playerHeight; my++)
+                      if (activeChunk.getBlock(mx, my, z+0.999) != null) {
+                        wallFactor = (pythag(playerPos[0]-x,playerPos[1]-y,playerPos[2]-z)/pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2])*tPMS/1000);
+                        playerPos[2] = z-0.0001;
+                        z = playerPos[2];
+                        playerVelocity[2] = -0.0000000001;
+                        continue jj;
+                      }
+                }
+              }
+            }*/
+            if (playerVelocity[1] <= 0) {
+              for (let y = Math.floor(playerPos[1]); y > playerPos[1]+playerVelocity[1]*tPMS/1000; y--)
+                for (let x = Math.floor(playerPos[0]-playerRadius); x < playerPos[0] + playerRadius; x++)
+                  for (let z = Math.floor(playerPos[2]-playerRadius); z < playerPos[2] + playerRadius; z++)
+                    if (activeChunk.getBlock(x, y-1, z) != null) {
+                      friction = Math.max(friction, activeChunk.getBlock(x, y-1, z).friction);
+                      hasFloor = true;
+                      floorY = y;
+                      playerVelocity[1] = 0.0001;
+                      playerPos[1] = y+0.0001;
+                    }
+            } else
+              for (let y = Math.ceil(playerPos[1]+playerHeight); y < playerPos[1]+playerHeight+playerVelocity[1]*tPMS/1000; y++)
+                for (let x = Math.floor(playerPos[0]-playerRadius); x < playerPos[0] + playerRadius; x++)
+                  for (let z = Math.floor(playerPos[2]-playerRadius); z < playerPos[2] + playerRadius; z++)
+                    if (activeChunk.getBlock(x, y, z) != null) {
+                      playerVelocity[1] = -0.0001;
+                      playerPos[1] = y-playerHeight;
+                    }
+            playerPos[1] += playerVelocity[1]*tPMS/1000;
+
+            if (playerVelocity[0] < 0) {
+              for (let x = Math.floor(playerPos[0]-playerRadius); x > playerPos[0]-playerRadius+playerVelocity[0]*tPMS/1000; x--)
+                for (let y = Math.floor(playerPos[1]); y < playerPos[1] + playerHeight; y++)
+                  for (let z = Math.floor(playerPos[2]-playerRadius); z < playerPos[2]+playerRadius; z++)
+                    if (activeChunk.getBlock(x-1, y, z) != null) {
+                      playerVelocity[0] = 0.0001;
+                      playerPos[0] = x + 0.0001 + playerRadius;
+                    }
+            } else
+              for (let x = Math.ceil(playerPos[0]+playerRadius); x < playerPos[0]+playerRadius+playerVelocity[0]*tPMS/1000; x++)
+                for (let y = Math.floor(playerPos[1]); y < playerPos[1] + playerHeight; y++)
+                  for (let z = Math.floor(playerPos[2]-playerRadius); z < playerPos[2]+playerRadius; z++)
+                    if (activeChunk.getBlock(x, y, z) != null) {
+                      playerVelocity[0] = -0.0001;
+                      playerPos[0] = x - 0.0001 - playerRadius;
+                    }
+            playerPos[0] += playerVelocity[0]*tPMS/1000;
+
+            if (playerVelocity[2] < 0) {
+              for (let z = Math.floor(playerPos[2]-playerRadius); z > playerPos[2]-playerRadius+playerVelocity[2]*tPMS/1000; z--)
+                for (let y = Math.floor(playerPos[1]); y < playerPos[1] + playerHeight; y++)
+                  for (let x = Math.floor(playerPos[0]-playerRadius); x < playerPos[0]+playerRadius; x++)
+                    if (activeChunk.getBlock(x, y, z-1) != null) {
+                      playerVelocity[2] = 0.0001;
+                      playerPos[2] = z + 0.0001 + playerRadius;
+                    }
+            } else
+              for (let z = Math.ceil(playerPos[2]+playerRadius); z < playerPos[2]+playerRadius+playerVelocity[2]*tPMS/1000; z++)
+                for (let y = Math.floor(playerPos[1]); y < playerPos[1] + playerHeight; y++)
+                  for (let x = Math.floor(playerPos[0]-playerRadius); x < playerPos[0]+playerRadius; x++)
+                    if (activeChunk.getBlock(x, y, z) != null) {
+                      playerVelocity[2] = -0.0001;
+                      playerPos[2] = z - 0.0001 - playerRadius;
+                    }
+            playerPos[2] += playerVelocity[2]*tPMS/1000;
+
+
+            let moveX = (keys[87] ? 1 : 0) - (keys[83] ? 1 : 0);
+            let moveZ = (keys[68] ? 1 : 0) - (keys[65] ? 1 : 0);
+            let moveC = pythag(moveX,0,moveZ);
+            if (Math.abs(moveC) >= 1) {
+              moveX /= moveC/moveSpeed;
+              moveZ /= moveC/moveSpeed;
+            }
+            playerVelocity[0] -= moveZ*Math.cos(cameraAngle[0]) + moveX*Math.sin(cameraAngle[0]);
+            playerVelocity[2] -= moveX*Math.cos(cameraAngle[0]) - moveZ*Math.sin(cameraAngle[0]);
+            //if (hasFloor) {
+              let c = pythag(playerVelocity[0],playerVelocity[1],playerVelocity[2]);
+              //if (friction*playerVelocity[1] > c)
+              //  playerVelocity = [0,0,0];
+              //else {
+              //  playerVelocity[0] += friction*playerVelocity[1]*playerVelocity[0]/c;
+              //  playerVelocity[2] += friction*playerVelocity[1]*playerVelocity[2]/c;
+              //}
+              if (c < gravity * friction*tPMS/1000) {
+                playerVelocity[0] = 0;
+                if (hasFloor)
+                  playerVelocity[1] = (keys[32]) ? jumpPower : 0;
+                else
+                  playerVelocity[1] = 0;
+                playerVelocity[2] = 0;
+              } else {
+                playerVelocity[0] *= (c-friction*gravity*tPMS/1000)/c;
+                if (hasFloor)
+                  playerVelocity[1] = (keys[32]) ? jumpPower : 0;
+                else
+                  playerVelocity[1] *= (c-friction*gravity*tPMS/1000)/c;
+                playerVelocity[2] *= (c-friction*gravity*tPMS/1000)/c;
+              }
+              //playerPos[1] = floorY;
+            //} else {
+
+            //}
+            playerVelocity[0] += moveZ*Math.cos(cameraAngle[0]) + moveX*Math.sin(cameraAngle[0]);
+            playerVelocity[2] += moveX*Math.cos(cameraAngle[0]) - moveZ*Math.sin(cameraAngle[0]);
+
+            playerVelocity[1] -= gravity*tPMS/1000;
+
+            while (playerPos[0] > chunkSize) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.posXChunk;
+              playerPos[0] -= chunkSize;
+            }
+            while (playerPos[0] < 0) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.negXChunk;
+              playerPos[0] += chunkSize;
+            }
+            while (playerPos[1] > chunkSize) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.posYChunk;
+              playerPos[1] -= chunkSize;
+            }
+            while (playerPos[1] < 0) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.negYChunk;
+              playerPos[1] += chunkSize;
+            }
+            while (playerPos[2] > chunkSize) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.posZChunk;
+              playerPos[2] -= chunkSize;
+            }
+            while (playerPos[2] < 0) {
+              //console.log("chunk crossed!");
+              activeChunk = activeChunk.negZChunk;
+              playerPos[2] += chunkSize;
+            }
+          }
+          cameraPos = [playerPos[0], playerPos[1] + 1.5, playerPos[2]];
+          let rfx = Math.sin(cameraAngle[0])*Math.cos(cameraAngle[1]);
+          let rfy = Math.sin(cameraAngle[1]);
+          let rfz = Math.cos(cameraAngle[0])*Math.cos(cameraAngle[1]);
+          let m = rfx/rfy;
+          let n = rfz/rfy;
+          let o = rfz/rfx;
+          let tx = 0;
+          let ty = 0;
+          let lightLevel = 0;
+          hasBlockSelected = false;
+          //selectedBlock = [0,0,0];
+          //placeBlock = [0,0,0];
+          let poiseX = cameraPos[0];
+          let poiseY = cameraPos[1];
+          let poiseZ = cameraPos[2];
+          //Z faceX
+          let bh = null;
+          let deltaY = 0;
+          while (bh == null) {
+            deltaX = (rfx<0) ? Math.floor(poiseX-0.0000001) - poiseX : Math.ceil(poiseX+0.0000001) - poiseX;
+            deltaY = (rfy<0) ? Math.floor(poiseY-0.0000001) - poiseY : Math.ceil(poiseY+0.0000001) - poiseY;
+            deltaZ = (rfz<0) ? Math.floor(poiseZ-0.0000001) - poiseZ : Math.ceil(poiseZ+0.0000001) - poiseZ;
+            if (Math.abs(deltaY) < Math.abs(deltaX/m) && Math.abs(deltaY) < Math.abs(deltaZ/n)) {
+              poiseY += deltaY;
+              poiseZ += deltaY*n;
+              poiseX += deltaY*m;
+              if (pythag(poiseX-cameraPos[0],poiseY-cameraPos[1],poiseZ-cameraPos[2]) > playerReach)
+                break;
+              if (true || poiseX > 0 && poiseX < chunkSize &&
+                poiseY > 0 && poiseY < chunkSize &&
+                poiseZ > 0 && poiseZ < chunkSize) {
+                bh = activeChunk.getBlock(poiseX, poiseY - ((rfy < 0) ? 1 : 0), poiseZ);
+                selectedBlock = [poiseX, poiseY - ((rfy < 0) ? 1 : 0), poiseZ];
+                lightLevel = activeChunk.getLightLevel(poiseX, poiseY - ((rfy < 0) ? 0 : 1), poiseZ);
+                placeBlock = [poiseX, poiseY - ((rfy < 0) ? 0 : 1), poiseZ];
+                if (bh == E) {
+                  break;
+                }
+                tx = poiseX;
+                ty = poiseZ;
+              } else {
+                bh = null;
+                break;
+              }
+            } else if (Math.abs(deltaX/m) < Math.abs(deltaZ/n)) {
+              poiseX += deltaX;
+              poiseZ += deltaX*o;
+              poiseY += deltaX/m;
+              if (pythag(poiseX-cameraPos[0],poiseY-cameraPos[1],poiseZ-cameraPos[2]) > playerReach)
+                break;
+              if (true || poiseX > 0 && poiseX < chunkSize &&
+                poiseY > 0 && poiseY < chunkSize &&
+                poiseZ > 0 && poiseZ < chunkSize) {
+                bh = activeChunk.getBlock(poiseX - ((rfx < 0) ? 1 : 0),poiseY,poiseZ);
+                selectedBlock = [poiseX - ((rfx < 0) ? 1 : 0),poiseY,poiseZ];
+                lightLevel = activeChunk.getLightLevel(poiseX - ((rfx < 0) ? 0 : 1),poiseY,poiseZ);
+                placeBlock = [poiseX - ((rfx < 0) ? 0 : 1),poiseY,poiseZ];
+                if (bh == E) {
+                  break;
+                }
+                tx = (rfx > 0) ? poiseZ : -poiseZ;
+                ty = poiseY;
+              } else {
+                bh = null;
+                break;
+              }
+            } else {
+              poiseZ += deltaZ;
+              poiseY += deltaZ/n;
+              poiseX += deltaZ/o;
+              if (pythag(poiseX-cameraPos[0],poiseY-cameraPos[1],poiseZ-cameraPos[2]) > playerReach)
+                break;
+              if (true || poiseX > 0 && poiseX < chunkSize &&
+                poiseY > 0 && poiseY < chunkSize &&
+                poiseZ > 0 && poiseZ < chunkSize) {
+                bh = activeChunk.getBlock(poiseX,poiseY,poiseZ - ((rfz < 0) ? 1 : 0));
+                selectedBlock = [poiseX,poiseY,poiseZ - ((rfz < 0) ? 1 : 0)];
+                lightLevel = activeChunk.getLightLevel(poiseX,poiseY,poiseZ - ((rfz < 0) ? 0 : 1));
+                placeBlock = [poiseX,poiseY,poiseZ - ((rfz < 0) ? 0 : 1)];
+                if (bh == E) {
+                  break;
+                }
+                tx = (rfz < 0) ? poiseX : -poiseX;
+                ty = poiseY;
+              } else {
+                bh = null;
+                break;
+              }
+            }
+          }
+          if (bh != null && bh != E) {
+            hasBlockSelected = true;
+          }
+
+          if (keyss[27]) {
+            keyss[27] = false;
+            gamePaused = true;
+            document.exitPointerLock();
+          }
+
+        }
+
+        return true;
+      }
+
+      async function mainLoop() {
+
+        //await sleep(100);
+
+        var moonMap = [[[0,255,0]]];
+
+        
+        moonMap = await getTexture(document.getElementById("moonmap"));
+        //console.log(moonMap);
+
+        grass.itemTexture = document.getElementById("grassimage");
+        grass.texture = await getTexture(document.getElementById("grassimage"));
+        sunStone.itemTexture = document.getElementById("sunimage");
+        sunStone.texture = await getTexture(document.getElementById("sunimage"));
+        stone.itemTexture = document.getElementById("stoneimage");
+        stone.texture = await getTexture(document.getElementById("stoneimage"));
+        dirt.itemTexture = document.getElementById("dirtimage");
+        dirt.texture = await getTexture(document.getElementById("dirtimage"));
+        
+        //var df = new DynamicFace([8.5, 8.5, 8.5], [1.0, 1.0], [1.5708/2,1.5708,0.0], dirt.texture);
+        //var cube = new Cube([8.5, 8.5, 8.5], [0.5, 1.0, 1.5], [3.1416/4, 3.1416/4], dirt.texture);
+        while (true) {
+
+          await sleep(mspf);
+
+          if (gamePaused) {
+            let sgwidth = 0;
+            let lgwidth = 0;
+
+            g.fillStyle = "rgba(0, 0, 0, 0.1)";
+            g.fillRect(0,0,canvas.width,canvas.height);
+            g.fillStyle = "#FFFFFF";
+            g.font = Math.floor(canvas.height/50).toString() + "px Times New Roman";
+            g.textAlign = "center";
+            g.textBaseline = "middle";
+            g.fillText("Game Paused",canvas.width/2,canvas.height/4);
+            g.fillStyle = "#EEEEEE";
+            sgWidth = g.measureText("Save Game").width + canvas.height/50;
+            g.fillRect((canvas.width-sgWidth)/2,canvas.height*48/100,sgWidth,canvas.height/25);
+            lgWidth = g.measureText("Load Game").width + canvas.height/50;
+            g.fillRect((canvas.width-lgWidth)/2,canvas.height*73/100,lgWidth,canvas.height/25);
+            g.fillStyle = "#444444";
+            g.fillText("Save Game",canvas.width/2,canvas.height/2);
+            g.fillText("Load Game",canvas.width/2,canvas.height*3/4);
+
+            if (mobileControl) {
+              var loadEvent = document.getElementById('fileInput');
+              loadEvent.hidden = false;
+              loadEvent.style.position = "absolute";
+              loadEvent.style.left = Math.floor((canvas.width-lgWidth)/2)+'px';
+              loadEvent.style.top = Math.floor(canvas.height*73/100)+'px';
+              loadEvent.width = Math.floor(lgWidth);
+              loadEvent.height = Math.floor(canvas.height/25);
+            }
+            while (gamePaused) {
+              try {
+                await sleep(10);
+                if (canvas.width != Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0) || canvas.height != Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)) {
+                  canvas.width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);//document.body.clientWidth;
+                  canvas.height = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);//document.body.clientHeight;
+                  await sleep (10)
+                  g.fillStyle = "#AAAAAA";
+                  g.fillRect(0,0,canvas.width,canvas.height);
+                  g.fillStyle = "#FFFFFF";
+                  g.font = Math.floor(canvas.height/50).toString() + "px Times New Roman";
+                  g.textAlign = "center";
+                  g.textBaseline = "middle";
+                  g.fillText("Game Paused",canvas.width/2,canvas.height/4);
+                  g.fillStyle = "#EEEEEE";
+                  sgWidth = g.measureText("Save Game").width + canvas.height/50;
+                  g.fillRect((canvas.width-sgWidth)/2,canvas.height*48/100,sgWidth,canvas.height/25);
+                  lgWidth = g.measureText("Load Game").width + canvas.height/50;
+                  g.fillRect((canvas.width-lgWidth)/2,canvas.height*73/100,lgWidth,canvas.height/25);
+                  g.fillStyle = "#444444";
+                  g.fillText("Save Game",canvas.width/2,canvas.height/2);
+                  g.fillText("Load Game",canvas.width/2,canvas.height*3/4);
+
+
+                  if (mobileControl) {
+                    var loadEvent = document.getElementById('fileInput');
+                    loadEvent.hidden = false;
+                    loadEvent.style.position = "absolute";
+                    loadEvent.style.left = Math.floor((canvas.width-lgWidth)/2)+'px';
+                    loadEvent.style.top = Math.floor(canvas.height*73/100)+'px';
+                    loadEvent.width = Math.floor(lgWidth);
+                    loadEvent.height = Math.floor(canvas.height/25);
+                  }
+                }
+              } catch (error) {
+                console.error("Error: " + error.message)
+              }
+
+              if (lmbs) {
+                lmbs = false;
+                if (mousePos[0] > (canvas.width-sgWidth)/2 && mousePos[0] < (canvas.width+sgWidth)/2 && mousePos[1] > canvas.height*48/100 && mousePos[1] < canvas.height*52/100) {
+                  let saveString = "";
+                  saveString += `${playerPos[0] + activeChunk.cx*chunkSize},${playerPos[1] + activeChunk.cy*chunkSize},${playerPos[2] + activeChunk.cz*chunkSize},${gameTime}`;
+                  playerInventory.forEach((row, i) => {
+                    row.forEach((item, j) => {
+                      //console.log("SDFA");
+                      saveString += "," + ((item == null) ? "0" : item.blockId.toString(16)) + "," + playerInventoryAmounts[i][j].toString(16);
+                    });
+
+                  });
+
+                  chunkMap.forEach((xzSector, key, map) => {
+                    if (key.split(" ").length == 2) {
+                      xzSector.forEach((chunk, key2, map2) => {
+                        if (chunk.tainted) {
+                          saveString += `~${chunk.cx.toString(16)},${chunk.cy.toString(16)},${chunk.cz.toString(16)}|`;
+                          chunk.blocks.forEach((item, i) => {
+                            item.forEach((item2, j) => {
+                              item2.forEach((block, k) => {
+                                if (block == null)
+                                  saveString += ((i+j+k == 0) ? "0" : ",0");
+                                else
+                                  saveString += ((i+j+k == 0) ? "" : ",") + block.blockId.toString(16);
+                              });
+                            });
+                          });
+                          saveString += "|";
+                          chunk.lightLevels.forEach((item, i) => {
+                            item.forEach((item2, j) => {
+                              item2.forEach((lightLevel, k) => {
+                                saveString += ((i+j+k == 0) ? "" : ",") + lightLevel.toString(16);
+                              });
+                            });
+                          });
+                          saveString += "|";
+                          chunk.skyLightLevels.forEach((item, i) => {
+                            item.forEach((item2, j) => {
+                              item2.forEach((skyLightLevel, k) => {
+                                saveString += ((i+j+k == 0) ? "" : ",") + skyLightLevel.toString(16);
+                              });
+                            });
+                          });
+                        }
+                      });
+                    }
+                  });
+
+                  saveString += "~" + seed.toString();
+
+                  //window.open(URL.createObjectURL(new Blob([saveString], {type: "text/plain"})));
+                  let picture = URL.createObjectURL(new Blob([saveString], {type: "text"}));
+                  let a = document.createElement('a');
+                  a.href = picture;
+                  a.download = Date.now().toString();
+                  a.click();
+                } else if (mousePos[0] > (canvas.width-lgWidth)/2 && mousePos[0] < (canvas.width+lgWidth)/2 && mousePos[1] > canvas.height*73/100 && mousePos[1] < canvas.height*77/100) {
+                  document.getElementById('fileInput').click();
+                } else if (mobileControl)
+                  gamePaused = false;
+
+
+
+              }
+            }
+          }
+          document.getElementById('fileInput').hidden = true;
+          if (canvas.width != Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0) || canvas.height != Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)) {
+            canvas.width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);//document.body.clientWidth;
+            canvas.height = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);//document.body.clientHeight;
+          }
+
+          //render TODO
+
+          let picMode = keyss[76];
+          keyss[76] = false;
+          let pixelSize = (picMode) ? 1 : ((mobileControl) ? 4 : 8);
+          let lightMap = chunkMap.get('lightMap');
+          g.fillStyle = "#66FFFF";
+          g.fillRect(0,0,canvas.width,canvas.height);
+          let colDict = new Map();
+          let renderFirst = new Map();
+          let cameraAngleX = cameraAngle[0];
+          let cameraAngleY = cameraAngle[1];
+          cameraPos = [playerPos[0], playerPos[1] + 1.5, playerPos[2]];
+
+          //lightMapFull = [];
+
+          for (let i = 0; i < lightMap.length; i++) {
+            for (let j = 0; j < skyLightMap.length; j++) {
+              lightMapFull[i][j] = [constrain(0, Math.sqrt(lightMap[i][0]*lightMap[i][0] + skyLightMap[j][0]*skyLightMap[j][0]), 1), constrain(0, Math.sqrt(lightMap[i][1]*lightMap[i][1] + skyLightMap[j][1]*skyLightMap[j][1]), 1), constrain(0, Math.sqrt(lightMap[i][2]*lightMap[i][2] + skyLightMap[j][2]*skyLightMap[j][2]), 1)];
+            }
+          }
+
+          //console.log(lightMapFull);
+
+          //speed definition
+          let fl = [0,0,0];
+          let sunriseColor = [0,0,0];
+          let sunsetColor = [0,0,0];
+          let color = [0, 0, 0];
+          let nightColor = [2,2,24];
+          let highSunColor = [0,0,0];
+          let hitBlock = [0,0,0];
+          let bb = null;
+          let out = new RenderOutput();
+          let chunkStack = [activeChunk];
+
+          for(let j = 0; j < canvas.height; j += pixelSize) {
+            let bgnColInt = -1;
+            let ry = (canvas.height-j*2)/canvas.width;
+            let rfy = ry*Math.cos(cameraAngleY) + Math.sin(cameraAngleY);
+            let r1z = Math.cos(cameraAngleY) - ry*Math.sin(cameraAngleY);
+            for(let i = 0; i < canvas.width; i += pixelSize) {
+              out.hit = false;
+              let rx = i*2/canvas.width-1;
+              let rfx = rx*Math.cos(cameraAngleX) + r1z*Math.sin(cameraAngleX);
+              let rfz = r1z*Math.cos(cameraAngleX) - rx*Math.sin(cameraAngleX);
+              let m = rfx/rfy;
+              let n = rfz/rfy;
+              let o = rfz/rfx;
+              let tx = 0;
+              let ty = 0;
+              hitBlock[0] = playerPos[0];
+              hitBlock[1] = playerPos[1];
+              hitBlock[2] = playerPos[2];
+              let lightLevel = 0;
+              let skyLightLevel = 0;
+              let poiseX = cameraPos[0];
+              let poiseY = cameraPos[1];
+              let poiseZ = cameraPos[2];
+              //Z faceX
+              let bh = null;
+              let deltaY = 0;
+
+              let tChunk = activeChunk;
+              chunkStack = [activeChunk];//.slice(1)
+              function emptyChunk() {
+                deltaX = (rfx<0) ? 0.0001-poiseX : chunkSize-0.0001 - poiseX;
+                deltaY = (rfy<0) ? 0.0001-poiseY : chunkSize-0.0001 - poiseY;
+                deltaZ = (rfz<0) ? 0.0001-poiseZ : chunkSize-0.0001 - poiseZ;
+                if (Math.abs(deltaZ) < Math.abs(deltaX*o) && Math.abs(deltaZ) < Math.abs(deltaY*n)) {
+                  poiseZ += deltaZ;
+                  poiseX += deltaZ/o;
+                  poiseY += deltaZ/n;
+                } else if (Math.abs(deltaY) < Math.abs(deltaX/m)) {
+                  poiseY += deltaY;
+                  poiseX += deltaY*m;
+                  poiseZ += deltaY*n;
+                } else {
+                  poiseX += deltaX;
+                  poiseY += deltaX/m;
+                  poiseZ += deltaX*o;
+                }
+              }
+
+              function updateChunk() {
+                let cl = false;
+                if (poiseX < 0 && tChunk.negXChunk) {
+                  tChunk = tChunk.negXChunk;
+                  //console.log('food!')
+                  chunkStack.push(tChunk);
+                  poiseX += chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                } else if (poiseX > chunkSize && tChunk.posXChunk) {
+                  tChunk = tChunk.posXChunk;
+                  chunkStack.push(tChunk);
+                  poiseX -= chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                } if (poiseY < 0 && tChunk.negYChunk) {
+                  tChunk = tChunk.negYChunk;
+                  chunkStack.push(tChunk);
+                  poiseY += chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                } else if (poiseY > chunkSize && tChunk.posYChunk) {
+                  tChunk = tChunk.posYChunk;
+                  chunkStack.push(tChunk);
+                  poiseY -= chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                } if (poiseZ < 0 && tChunk.negZChunk) {
+                  tChunk = tChunk.negZChunk;
+                  chunkStack.push(tChunk);
+                  poiseZ += chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                } else if (poiseZ > chunkSize && tChunk.posZChunk) {
+                  tChunk = tChunk.posZChunk;
+                  chunkStack.push(tChunk);
+                  poiseZ -= chunkSize;
+                  //if (!tChunk)
+                  //  break;
+                  if (tChunk.chunkEmpty) {
+                    emptyChunk();
+                    cl = true;
+                  }
+                }
+                return cl;
+              }
+              while (bh == null) {
+                //updateChunk();
+                deltaX = (rfx<0) ? Math.floor(poiseX-0.0000001) - poiseX : Math.ceil(poiseX+0.0000001) - poiseX;
+                deltaY = (rfy<0) ? Math.floor(poiseY-0.0000001) - poiseY : Math.ceil(poiseY+0.0000001) - poiseY;
+                deltaZ = (rfz<0) ? Math.floor(poiseZ-0.0000001) - poiseZ : Math.ceil(poiseZ+0.0000001) - poiseZ;
+                if (Math.abs(deltaY) < Math.abs(deltaX/m) && Math.abs(deltaY) < Math.abs(deltaZ/n)) {
+                  poiseY += deltaY;
+                  poiseZ += deltaY*n;
+                  poiseX += deltaY*m;
+                  if (!updateChunk()) {
+                    if ((true || poiseX > 0 && poiseX < chunkSize &&
+                      poiseY > 0 && poiseY < chunkSize &&
+                      poiseZ > 0 && poiseZ < chunkSize)) {
+                      bh = tChunk.getBlock(poiseX, poiseY - ((rfy < 0) ? 1 : 0), poiseZ);
+                      hitBlock[0] = poiseX;
+                      hitBlock[1] = poiseY - ((rfy < 0) ? 1 : 0);
+                      hitBlock[2] = poiseZ;
+                      lightLevel = tChunk.getLightLevel(poiseX, poiseY - ((rfy < 0) ? 0 : 1), poiseZ);
+                      skyLightLevel = tChunk.getSkyLightLevel(poiseX, poiseY - ((rfy < 0) ? 0 : 1), poiseZ);
+                      if (bh == E) {
+                        break;
+                      }
+                      tx = poiseX;
+                      ty = poiseZ;
+                    } else {
+                      bh = null;
+                      break;
+                    }
+                  }
+                } else if (Math.abs(deltaX/m) < Math.abs(deltaZ/n)) {
+                  poiseX += deltaX;
+                  poiseZ += deltaX*o;
+                  poiseY += deltaX/m;
+                  if (!updateChunk()) {
+                    if ((true || poiseX > 0 && poiseX < chunkSize &&
+                      poiseY > 0 && poiseY < chunkSize &&
+                      poiseZ > 0 && poiseZ < chunkSize)) {
+                      bh = tChunk.getBlock(poiseX - ((rfx < 0) ? 1 : 0),poiseY,poiseZ);
+                      hitBlock[0] = poiseX - ((rfx < 0) ? 1 : 0);
+                      hitBlock[1] = poiseY;
+                      hitBlock[2] = poiseZ;
+                      lightLevel = tChunk.getLightLevel(poiseX - ((rfx < 0) ? 0 : 1),poiseY,poiseZ);
+                      skyLightLevel = tChunk.getSkyLightLevel(poiseX - ((rfx < 0) ? 0 : 1),poiseY,poiseZ);
+                      if (bh == E) {
+                        break;
+                      }
+                      tx = (rfx > 0) ? poiseZ : -poiseZ;
+                      ty = poiseY;
+                    } else {
+                      bh = null;
+                      break;
+                    }
+                  }
+                } else {
+                  poiseZ += deltaZ;
+                  poiseY += deltaZ/n;
+                  poiseX += deltaZ/o;
+                  if (!updateChunk()) {
+                    if ((true || poiseX > 0 && poiseX < chunkSize &&
+                      poiseY > 0 && poiseY < chunkSize &&
+                      poiseZ > 0 && poiseZ < chunkSize)) {
+                      bh = tChunk.getBlock(poiseX,poiseY,poiseZ - ((rfz < 0) ? 1 : 0));
+                      hitBlock[0] = poiseX;
+                      hitBlock[1] = poiseY;
+                      hitBlock[2] = poiseZ - ((rfz < 0) ? 1 : 0);
+                      lightLevel = tChunk.getLightLevel(poiseX,poiseY,poiseZ - ((rfz < 0) ? 0 : 1));
+                      skyLightLevel = tChunk.getSkyLightLevel(poiseX,poiseY,poiseZ - ((rfz < 0) ? 0 : 1));
+                      if (bh == E) {
+                        break;
+                      }
+                      tx = (rfz < 0) ? poiseX : -poiseX;
+                      ty = poiseY;
+                    } else {
+                      bh = null;
+                      break;
+                    }
+                  }
+                }
+              }
+              chunkStack.forEach((chunk, i) => {
+                chunk.entities.forEach((item, j) => {
+                  //if (!item.destroyed)
+                  item.traceRender(cameraPos[0] + chunkSize*(activeChunk.cx-chunk.cx), cameraPos[1] + chunkSize*(activeChunk.cy-chunk.cy), cameraPos[2] + chunkSize*(activeChunk.cz-chunk.cz), m, n, Math.sign(rfy), out);
+                });
+              });
+
+
+              if (bh != null && bh != E) {
+                //console.log(bh.texture[Math.floor((tx-Math.floor(tx))*bh.texture.length)]);
+                //console.log(bh.texture.length);
+                //console.log(Math.floor((ty-Math.floor(ty))*bh.texture[Math.floor((tx-Math.floor(tx))*bh.texture.length)].length));
+                //console.log(bh);
+                let colorx = 0;
+                if (out.hit && Math.abs(out.pos[1]) < Math.abs(poiseY - cameraPos[1] + (tChunk.cy - activeChunk.cy)*chunkSize)) {
+                  colorx = out.color;
+                  color[0] = colorx[0];
+                  color[1] = colorx[1];
+                  color[2] = colorx[2];
+                } else {
+                  colorx = bh.texture[Math.floor((tx-Math.floor(tx))*bh.texture.length)][Math.floor((ty-Math.floor(ty))*bh.texture[Math.floor((tx-Math.floor(tx))*bh.texture.length)].length)];
+                  color[0] = colorx[0];
+                  color[1] = colorx[1];
+                  color[2] = colorx[2];
+                  if (!picMode && Math.floor((hitBlock[0]%chunkSize+chunkSize)%chunkSize) == Math.floor((selectedBlock[0]%chunkSize+chunkSize)%chunkSize) && Math.floor((hitBlock[1]%chunkSize+chunkSize)%chunkSize) == Math.floor((selectedBlock[1]%chunkSize+chunkSize)%chunkSize) && Math.floor((hitBlock[2]%chunkSize+chunkSize)%chunkSize) == Math.floor((selectedBlock[2]%chunkSize+chunkSize)%chunkSize)) {
+                    color[0] = Math.floor((color[0]+255)/2);
+                    color[1] = Math.floor((color[1]+255)/2);
+                    color[2] = Math.floor((color[2]+255)/2);
+                  }
+                  //if ((i >= 0.48*canvas.width && i < 0.52*canvas.width && j >= 0.498*canvas.height && j < 0.502*canvas.height) || (i >= 0.498*canvas.width && i < 0.502*canvas.width && j >= 0.48*canvas.height && j < 0.52*canvas.height))
+                  //  color = [255 - color[0], 255 - color[1], 255 - color[2]];]
+                  //let bl = lightMap[lightLevel];//[Math.max(lightLevel[0],skyLightLevel[0]),Math.max(lightLevel[1],skyLightLevel[1]),Math.max(lightLevel[2],skyLightLevel[2])];
+                  //let sl = skyLightMap[Math.max(skyLightLevel,0)];
+                  //fl[0] = Math.sqrt(bl[0]*bl[0]+sl[0]*sl[0]);
+                  //fl[1] = Math.sqrt(bl[1]*bl[1]+sl[1]*sl[1]);
+                  //fl[2] = Math.sqrt(bl[2]*bl[2]+sl[2]*sl[2]);
+                  fl = lightMapFull[lightLevel][skyLightLevel];
+                  if (fl == undefined) {
+                    //console.log(skyLightLevel);
+                    color[0] = 255;
+                    color[1] = 0;
+                    color[2] = 0;
+                  } else {
+                    color[0] = Math.floor(fl[0]*color[0]);
+                    color[1] = Math.floor(fl[1]*color[1]);
+                    color[2] = Math.floor(fl[2]*color[2]);
+                  }
+                  //console.log([(lightMap[lightLevel][0])*color[0]]);
+                  //console.log();
+                }
+                color[0] = Math.floor(Math.min(255, color[0]));
+                color[1] = Math.floor(Math.min(255, color[1]));
+                color[2] = Math.floor(Math.min(255, color[2]));
+                let colorint = color[0]*0x10000+color[1]*0x100+color[2];
+                if (i == 0) {
+                  bb = [0,j,pixelSize];
+                  bgnColInt = colorint;
+                  if (renderFirst.get(colorint) == undefined) {
+                    renderFirst.set(colorint, [bb]);
+                  } else {
+                    renderFirst.get(colorint).push(bb);
+                  }
+                } else if (colorint == bgnColInt) {
+                  bb[2] = i+pixelSize;
+                } else if (colDict.get(colorint) == undefined) {
+                  colDict.set(colorint, [[i,j,i+pixelSize]]);
+                } else {
+                  item = colDict.get(colorint);
+                  if (item[item.length-1][2] == i && item[item.length-1][1] == j)
+                    item[item.length-1][2] += pixelSize;
+                  else {
+                    item.push([i,j,i+pixelSize]);
+                  }
+                }
+                //g.fillStyle = toStringRGB(color[0],color[1],color[2]);
+                //g.fillRect(i,j,pixelSize,pixelSize);
+              } else if (out.hit) {
+                color = out.color;
+                let colorint = color[0]*0x10000+color[1]*0x100+color[2];
+                if (i == 0) {
+                  bb = [0,j,pixelSize];
+                  bgnColInt = colorint;
+                  if (renderFirst.get(colorint) == undefined) {
+                    renderFirst.set(colorint, [bb]);
+                  } else {
+                    renderFirst.get(colorint).push(bb);
+                  }
+                } else if (colorint == bgnColInt) {
+                  bb[2] = i+pixelSize;
+                } else if (colDict.get(colorint) == undefined) {
+                  colDict.set(colorint, [[i,j,i+pixelSize]]);
+                } else {
+                  item = colDict.get(colorint);
+                  if (item[item.length-1][2] == i && item[item.length-1][1] == j)
+                    item[item.length-1][2] += pixelSize;
+                  else {
+                    item.push([i,j,i+pixelSize]);
+                  }
+                }
+              } else {
+                let a = -Math.sin(gameTime/24*6.2832);
+                let c = Math.cos(gameTime/24*6.2832);
+                let b = 0;
+                let r = 0.04;
+                let am = -Math.sin(gameTime*57/59/24*6.2832);
+                let cm = Math.cos(gameTime*57/59/24*6.2832);
+                let bm = 0;
+                let rm = 0.038;
+
+                let discriminant = Math.pow(m*a+n*b+c,2) - (a*a+b*b+c*c-r*r)*(m*m+n*n+1);
+                let moonDiscriminant = Math.pow(m*am+n*bm+cm,2) - (am*am+bm*bm+cm*cm-rm*rm)*(m*m+n*n+1);
+                let xfactor = 0;
+                if (rfy < 0 || (discriminant < 0 || moonDiscriminant > 0 ) || ((m*a+n*b+c)+Math.sqrt(discriminant))*rfy < 0 || ((m*am+n*bm+cm)+Math.sqrt(moonDiscriminant))*rfy < 0) {
+                  let xfactor = 1/Math.cosh(4*rfy/Math.sqrt(rfx*rfx+rfz*rfz))*(1+Math.sin(Math.atan2(rfx,rfz)))/2;
+                  sunriseColor[0] = 192*xfactor + 8*(1-xfactor);
+                  sunriseColor[1] = 96*xfactor + 8*(1-xfactor);
+                  sunriseColor[2] = 128*xfactor + 64*(1-xfactor);
+                  xfactor = 1/Math.cosh(4*rfy/Math.sqrt(rfx*rfx+rfz*rfz))*(1+Math.sin(Math.atan2(-rfx,rfz)))/2;
+                  sunsetColor[0] = 192*xfactor + 8*(1-xfactor);
+                  sunsetColor[1] = 96*xfactor + 8*(1-xfactor);
+                  sunsetColor[2] = 192*xfactor + 64*(1-xfactor);
+                  let lowSunColor = (gameTime%24 < 12) ? sunsetColor : sunriseColor;
+                  xfactor = 1/Math.cosh(((rfy > 0) ? 3 : 8)*rfy/Math.sqrt(rfx*rfx+rfz*rfz));
+                  highSunColor[0] = 224*xfactor + ((rfy > 0) ? 128 : 32)*(1-xfactor);
+                  highSunColor[1] = 224*xfactor + ((rfy > 0) ? 128 : 32)*(1-xfactor);
+                  highSunColor[2] = 240*xfactor + ((rfy > 0) ? 192 : 32)*(1-xfactor);
+                  nightColor[0] = 2;
+                  nightColor[1] = 2;
+                  nightColor[2] = 24;
+                  let mainColor = ((gameTime%24 + 6) % 24 < 12) ? highSunColor : nightColor;
+                  color = mainColor;
+                  if (gameTime%12 > 5 && gameTime%12 < 7) {
+                    xfactor = 1 - (gameTime%12 - 6)*(gameTime%12 - 6);
+                    color[0] = lowSunColor[0]*xfactor + mainColor[0]*(1-xfactor);
+                    color[1] = lowSunColor[1]*xfactor + mainColor[1]*(1-xfactor);
+                    color[2] = lowSunColor[2]*xfactor + mainColor[2]*(1-xfactor);
+                  }
+                  if (moonDiscriminant > 0 && rfy > 0 && ((m*am+n*bm+cm)+Math.sqrt(moonDiscriminant))*rfy > 0) {
+                    let moonZ = ((m*am + n*bm + cm) - Math.sqrt(moonDiscriminant))/(m*m + n*n + 1)*-Math.sign(rfz);
+                    let moonX = moonZ * m;
+                    let moonY = moonZ * n * Math.sign(rfz);//
+                    let moonLon = Math.atan2(moonX+am*Math.sign(rfz),moonZ+cm*Math.sign(rfz)) + 1.5708*Math.sign(rfz) + gameTime*57/59/24*6.2832;
+                    let moonLat = Math.asin((moonY-bm)/rm);
+                    //mcolor[0] = Math.floor(2*mcolor[0]-mcolor[0]*mcolor[0]/256);
+                    //mcolor[1] = Math.floor(2*mcolor[1]-mcolor[1]*mcolor[1]/256);
+                    //mcolor[2] = Math.floor(2*mcolor[2]-mcolor[2]*mcolor[2]/256);
+                    if (Math.sin(moonLon + 2/59/24*6.2832*gameTime) < 0) {
+                      let mcolor = moonMap[Math.floor(((moonLon/6.2832+1.25)%1)*moonMap.length)][Math.floor(((moonLat/3.1416+1.5)%1)*moonMap[0].length)];
+                      if (mcolor == undefined)
+                        mcolor = [255,0,0];
+                      color[0] = color[0]-mcolor[0]/256*(255-color[0])*Math.sin(moonLon + 2/59/24*6.2832*gameTime)*Math.cos(moonLat);
+                      color[1] = color[1]-mcolor[1]/256*(255-color[1])*Math.sin(moonLon + 2/59/24*6.2832*gameTime)*Math.cos(moonLat);
+                      color[2] = color[2]-mcolor[2]/256*(255-color[2])*Math.sin(moonLon + 2/59/24*6.2832*gameTime)*Math.cos(moonLat);
+                    }
+                  }
+                } else {
+                  color[0] = 255;
+                  color[1] = 96+160*Math.min(1,Math.abs(6-gameTime%12));
+                  color[2] = 180+60*Math.min(1,Math.abs(6-gameTime%12));
+                }
+                color[0] = Math.floor(Math.min(255, color[0]));
+                color[1] = Math.floor(Math.min(255, color[1]));
+                color[2] = Math.floor(Math.min(255, color[2]));
+                let colorint = color[0]*0x10000+color[1]*0x100+color[2];
+                if (i == 0) {
+                  bb = [0,j,pixelSize];
+                  bgnColInt = colorint;
+                  if (renderFirst.get(colorint) == undefined) {
+                    renderFirst.set(colorint, [bb]);
+                  } else {
+                    renderFirst.get(colorint).push(bb);
+                  }
+                } else if (colorint == bgnColInt) {
+                  bb[2] = i+pixelSize;
+                } else if (colDict.get(colorint) == undefined) {
+                  colDict.set(colorint, [[i,j,i+pixelSize]]);
+                } else {
+                  item = colDict.get(colorint);
+                  if (item[item.length-1][2] == i && item[item.length-1][1] == j)
+                    item[item.length-1][2] += pixelSize;
+                  else {
+                    item.push([i,j,i+pixelSize]);
+                  }
+                }
+              }
+            }
+          }
+
+          renderFirst.forEach((value, key) => {
+            g.fillStyle = toStringRGB(Math.floor(key/0x10000)%256, Math.floor(key/0x100)%256, key%256);
+            value.forEach((a) => {
+              g.fillRect(a[0],a[1],a[2]-a[0],pixelSize);
+            });
+            //g.fill();
+            //g.beginPath();
+          });
+          colDict.forEach((value, key) => {
+            g.fillStyle = toStringRGB(Math.floor(key/0x10000)%256, Math.floor(key/0x100)%256, key%256);
+            value.forEach((a) => {
+              g.fillRect(a[0],a[1],a[2]-a[0],pixelSize);
+            });
+            //g.fill();
+            //g.beginPath();
+          });
+          if (picMode) {
+            //window.open(canvas.toDataURL('image/png'));
+            let picture = canvas.toDataURL('png');
+            let a = document.createElement('a');
+            a.href = picture;
+            a.download = Date.now().toString();
+            a.click();
+          }
+          g.fillStyle = '#000000';
+          g.fillRect(canvas.width*0.48,canvas.height*0.498,canvas.width*0.04,canvas.height*0.004);
+          g.fillRect(canvas.width*0.498,canvas.height*0.48,canvas.width*0.004,canvas.height*0.04);
+          playerInventory[0].forEach((item, i) => {
+            //console.log(i);
+            g.fillStyle = (i==itemSelected) ? '#777777' : '#000000';
+            g.fillRect((canvas.width)/2+canvas.height*(inventorySpacing+inventoryBlockSize)*(i-playerInventory[0].length/2),canvas.height*(1-inventorySpacing-inventoryBlockSize),inventoryBlockSize*canvas.height,inventoryBlockSize*canvas.height);
+            if (item != null) {
+              let tx = item.itemTexture;
+              let rsx = (canvas.width)/2+canvas.height*(inventorySpacing+inventoryBlockSize)*(i-playerInventory[0].length/2)+canvas.height*inventorySpacing;
+              let rsy = canvas.height*(1-inventoryBlockSize);
+              let h = (inventoryBlockSize-2*inventorySpacing)*canvas.height;
+              if (tx != null)
+                g.drawImage(tx, rsx, rsy, h, h);
+
+              g.fillStyle = "#FFFFFF";
+              g.font = Math.floor(canvas.height/80).toString() + "px Times New Roman";
+              //g.textAlign = "center";
+              //g.textBaseline = "middle";
+              g.fillText(playerInventoryAmounts[0][i].toString(), (canvas.width)/2+canvas.height*(inventorySpacing+inventoryBlockSize)*(i-playerInventory[0].length/2), canvas.height*(1-inventorySpacing));
+              /*for (let k = Math.ceil(rsx); k < rsx+h; k++)
+                for (let j = Math.ceil(rsy); j < rsy+h; j++){
+                  row = item.texture[Math.floor((j-rsy)/h*tx.length)];
+                  console.log(Math.floor((j-rsy)/h*tx.length))
+                  pixel = row[Math.floor((k-rsx)/h*row.length)];
+                  g.fillStyle=toStringRGB(pixel[0],pixel[1],pixel[2]);
+                  g.fillRect(k, j, 1, 1);
+                }*/
+              //tx.forEach((row, k) => {
+              //  row.forEach((pixel, j) => {
+              //    g.fillStyle=toStringRGB(pixel[0],pixel[1],pixel[2]);
+              //    g.imageSmoothingEnabled = false;
+              //    g.fillRect((canvas.width)/2+canvas.height*(inventorySpacing+inventoryBlockSize)*(i-playerInventory[0].length/2)+canvas.height*inventorySpacing+j*(inventoryBlockSize-2*inventorySpacing)*canvas.height/row.length,canvas.height*(1-inventoryBlockSize)+k*(inventoryBlockSize-2*inventorySpacing)*canvas.height/tx.length,Math.ceil((inventoryBlockSize-2*inventorySpacing)*canvas.height/row.length),Math.ceil((inventoryBlockSize-2*inventorySpacing)*canvas.height/tx.length));
+              //  });
+              //});
+
+            }
+            //g.fillRect((canvas.width)/2+canvas.height*(inventorySpacing+inventoryBlockSize)*(i-playerInventory[0].length/2),canvas.height*(1-inventorySpacing-inventoryBlockSize),inventoryBlockSize*canvas.height,inventoryBlockSize*canvas.height);
+          });
+          if (mobileControl) {
+            g.fillStyle = "rgba(127, 127, 127, 0.5)";
+
+            //buttons
+            g.fillStyle = keys[65] ? "rgba(0, 255, 0, 0.5)" : "rgba(127, 127, 127, 0.5)";
+            g.fillRect(0,canvas.height/12,canvas.width/12,canvas.height/12); //left
+            g.fillStyle = keys[87] ? "rgba(0, 255, 0, 0.5)" : "rgba(127, 127, 127, 0.5)";
+            g.fillRect(canvas.width/12,0,canvas.width/12,canvas.height/12); //forward
+            g.fillStyle = keys[32] ? "rgba(0, 255, 0, 0.5)" : "rgba(127, 127, 127, 0.5)";
+            g.fillRect(canvas.width/12,canvas.height/12,canvas.width/12,canvas.height/12); //jump
+            g.fillStyle = keys[68] ? "rgba(0, 255, 0, 0.5)" : "rgba(127, 127, 127, 0.5)";
+            g.fillRect(canvas.width/6,canvas.height/12,canvas.width/12,canvas.height/12); //right
+            g.fillStyle = keys[83] ? "rgba(0, 255, 0, 0.5)" : "rgba(127, 127, 127, 0.5)";
+            g.fillRect(canvas.width/12,canvas.height/6,canvas.width/12,canvas.height/12); //backward
+            g.fillStyle = "rgba(127, 127, 127, 0.5)";
+            g.fillRect(canvas.width/3,0,canvas.width/6,canvas.height/12); //picture
+            g.fillRect(canvas.width/3,canvas.height/6,canvas.width/6,canvas.height/12); //mine block
+            g.fillRect(canvas.width*7/12,0,canvas.width/6,canvas.height/12); //Menu
+            g.fillRect(canvas.width*7/12,canvas.height/6,canvas.width/6,canvas.height/12); //place block
+            g.fillRect(canvas.width*5/6,0,canvas.width/6,canvas.height/12); //Cycle left
+            g.fillRect(canvas.width*5/6,canvas.height/6,canvas.width/6,canvas.height/12); //Cycle right
+
+            //texts
+            g.textAlign = "center";
+            g.textBaseline = "middle";
+            g.fillStyle = "rgba(0, 0, 0, 0.5)";
+            g.fillText("A (Left)",canvas.width/24,canvas.height/8); //left
+            g.fillText("W (Forwards)",canvas.width/8,canvas.height/24); //forward
+            g.fillText("Space (Jump)",canvas.width/8,canvas.height/8); //jump
+            g.fillText("D (Right)",canvas.width/4.8,canvas.height/8); //right
+            g.fillText("S (Backwards)",canvas.width/8,canvas.height/4.8); //backward
+            g.fillText("L (Take picture)",canvas.width/2.4,canvas.height/24); //picture
+            g.fillText("LMB (Mine block)",canvas.width/2.4,canvas.height/4.8); //mine block
+            g.fillText("Esc (Menu)",canvas.width*2/3,canvas.height/24); //menu
+            g.fillText("RMB (Place block)",canvas.width*2/3,canvas.height/4.8); //place block
+            g.fillText("Cycle left (Scroll up)",canvas.width*11/12,canvas.height/24); //cycle left
+            g.fillText("Cycle right (Scroll down)",canvas.width*11/12,canvas.height/4.8); //cycle right
+          }
+        }
+      }
+
+      setTimeout(0,tickMain());
+      mainLoop();
+    </script>
+  </body>
+</html>
